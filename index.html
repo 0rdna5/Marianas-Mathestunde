@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Marianas Mathestunde</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <h1>Marianas Mathestunde</h1>
+      <div class="stats">
+        <span id="levelPill" class="pill">Level 1</span>
+        <span id="streakPill" class="pill">Streak 0</span>
+        <span id="scorePill" class="pill">Punkte 0</span>
+      </div>
+    </header>
+
+    <section class="card">
+      <div class="row">
+        <label for="topic">Thema</label>
+        <select id="topic">
+          <option value="mix">Mix</option>
+          <option value="integers">Ganze Zahlen</option>
+          <option value="fractions">Brüche</option>
+          <option value="decimals">Dezimalzahlen</option>
+          <option value="percent">Prozent</option>
+          <option value="equations">Gleichungen</option>
+        </select>
+      </div>
+
+      <div class="qbox">
+        <div id="question" class="question">Lade Aufgabe…</div>
+        <div class="hint" id="hint"></div>
+      </div>
+
+      <div class="answer">
+        <input id="answer" inputmode="decimal" autocomplete="off" placeholder="Antwort eingeben…" />
+        <button id="checkBtn">Check</button>
+      </div>
+
+      <div id="feedback" class="feedback" aria-live="polite"></div>
+
+      <div class="actions">
+        <button id="skipBtn" class="ghost">Überspringen</button>
+        <button id="newBtn" class="ghost">Neue Aufgabe</button>
+        <button id="resetBtn" class="danger">Reset</button>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <small>Offline-fähig (Browser) • Fortschritt wird lokal gespeichert</small>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
