@@ -1,0 +1,56 @@
+{
+  "meta": {
+    "grade": "AT AHS Unterstufe (4. Klasse)",
+    "focus": ["linear", "powers", "roots", "geometry", "terms"]
+  },
+  "cards": [
+    {
+      "id": "terms_01",
+      "topic": "terms",
+      "prompt": "Vereinfache: 3x + 5x - 7",
+      "answerType": "text",
+      "answer": "8x-7",
+      "hint": "Tipp: Gleichartige Terme zusammenfassen."
+    },
+    {
+      "id": "terms_02",
+      "topic": "terms",
+      "prompt": "Klammer auflösen: 4(2x - 3)",
+      "answerType": "text",
+      "answer": "8x-12",
+      "hint": "Tipp: Distributivgesetz: 4*2x und 4*(-3)."
+    },
+    {
+      "id": "linear_01",
+      "topic": "linear",
+      "prompt": "Berechne y: y = 2x - 5 für x = 7",
+      "answerType": "number",
+      "answer": 9,
+      "hint": "Tipp: x einsetzen und ausrechnen."
+    },
+    {
+      "id": "powers_01",
+      "topic": "powers",
+      "prompt": "Berechne: 5^3",
+      "answerType": "number",
+      "answer": 125,
+      "hint": "Tipp: 5·5·5."
+    },
+    {
+      "id": "roots_01",
+      "topic": "roots",
+      "prompt": "Berechne: √144",
+      "answerType": "number",
+      "answer": 12,
+      "hint": "Tipp: Welche Zahl mal sich selbst ergibt 144?"
+    },
+    {
+      "id": "geometry_01",
+      "topic": "geometry",
+      "prompt": "Rechteck: a=8 cm, b=3 cm. Fläche A=? (cm²)",
+      "answerType": "number",
+      "answer": 24,
+      "hint": "Tipp: A=a·b."
+    }
+  ]
+}
