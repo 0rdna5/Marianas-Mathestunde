@@ -140,3 +140,24 @@ button.small{ padding:8px 10px; border-radius:12px; font-weight:700; }
 .modalBody{ padding:14px; display:flex; flex-direction:column; gap:12px; }
 .modalHead{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .modalHead h2{ margin:0; font-size:18px; }
+
+.daily{ width:100%; margin-top:8px; }
+.dailyRow{ display:flex; justify-content:space-between; gap:10px; align-items:center; }
+.dailyText{ color:var(--muted); font-size:13px; }
+.dailyDone{ color:var(--accent2); font-weight:800; font-size:13px; }
+
+.bar{
+  height:10px;
+  border-radius:999px;
+  background: rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.10);
+  overflow:hidden;
+  margin-top:6px;
+}
+.barFill{
+  height:100%;
+  border-radius:999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  width:0%;
+}
+
