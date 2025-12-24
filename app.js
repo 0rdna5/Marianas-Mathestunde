@@ -27,10 +27,18 @@ const playerNameInput = el("playerName");
 const themeSelect = el("theme");
 const saveProfileBtn = el("saveProfileBtn");
 
+const dailyText = el("dailyText");
+const dailyDone = el("dailyDone");
+const barFill = el("barFill");
+
+
 const STATE_KEY = "mmm_state_v3";
 const PROFILE_KEY = "mmm_profile_v1";
 const STATS_KEY = "mmm_topic_stats_v1"; // adaptive repetition
 const CARDS_KEY = "mmm_cards_cache_v1";
+const DAILY_KEY = "mmm_daily_v1";
+const DAILY_TARGET = 15;
+
 
 function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 function normalizeNumber(str) { return String(str).trim().replace(",", "."); }
@@ -78,6 +86,35 @@ function saveAll() {
   saveJSON(PROFILE_KEY, profile);
   saveJSON(STATS_KEY, topicStats);
 }
+
+function todayKey() {
+  // Local date key: YYYY-MM-DD
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${da}`;
+}
+
+function loadDaily() {
+  const t = todayKey();
+  const stored = loadJSON(DAILY_KEY, { day: t, solved: 0 });
+  if (stored.day !== t) return { day: t, solved: 0 }; // new day -> reset
+  return stored;
+}
+
+function saveDaily(d) { saveJSON(DAILY_KEY, d); }
+
+let daily = loadDaily();
+
+function renderDaily() {
+  const solved = Math.min(daily.solved, DAILY_TARGET);
+  dailyText.textContent = `Tagesziel: ${solved}/${DAILY_TARGET}`;
+  const pct = Math.round((solved / DAILY_TARGET) * 100);
+  barFill.style.width = `${Math.min(100, pct)}%`;
+  dailyDone.hidden = solved < DAILY_TARGET;
+}
+
 
 // ---------------- Card deck loading ----------------
 async function loadDeck() {
@@ -316,12 +353,20 @@ function checkAnswer() {
     topicStats[topic].correct += 1;
 
     feedbackEl.textContent = "✅ Richtig!";
+    daily = loadDaily();      // falls Mitternacht überschritten wurde
+    daily.solved += 1;
+    saveDaily(daily);
+    renderDaily();
+
   } else {
     state.streak = 0;
     topicStats[topic].wrong += 1;
 
     const shown = String(current.a).replace(".", ",");
     feedbackEl.textContent = `❌ Nicht ganz. Richtige Antwort: ${shown}`;
+    daily = loadDaily();
+    renderDaily();
+
   }
 
   saveAll();
@@ -372,6 +417,7 @@ topicEl.addEventListener("change", newQuestion);
 (async function init() {
   applyProfile();
   renderStats();
+  renderDaily();
   await loadDeck();
   newQuestion();
 })();
