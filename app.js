@@ -466,6 +466,7 @@ function resetProgress() {
 }
 
 // ---------------- Modal / Profile ----------------
+closeModal();
 function openModal()  { modalBackdrop.classList.add("open"); }
 function closeModal() { modalBackdrop.classList.remove("open"); }
 
