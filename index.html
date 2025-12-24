@@ -21,6 +21,8 @@
   <span id="levelPill" class="pill">Level 1</span>
   <span id="streakPill" class="pill">Streak 0</span>
   <span id="scorePill" class="pill">Punkte 0</span>
+  <span id="coinPill" class="pill">Coins 0</span>
+
 
   <div class="daily">
     <div class="dailyRow">
@@ -113,5 +115,17 @@
   </main>
 
   <script src="app.js"></script>
+<div id="fxLayer" class="fxLayer" aria-hidden="true"></div>
+
+<div id="badgeToast" class="badgeToast" hidden>
+  <div class="badgeCard">
+    <div class="badgeIcon" id="badgeIcon">🏆</div>
+    <div class="badgeText">
+      <div class="badgeTitle" id="badgeTitle">Achievement!</div>
+      <div class="badgeSub" id="badgeSub">Nice!</div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
