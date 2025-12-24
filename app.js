@@ -12,6 +12,14 @@ const levelPill = el("levelPill");
 const streakPill = el("streakPill");
 const scorePill = el("scorePill");
 
+const fxLayer = el("fxLayer");
+const badgeToast = el("badgeToast");
+const badgeIcon = el("badgeIcon");
+const badgeTitle = el("badgeTitle");
+const badgeSub = el("badgeSub");
+const coinPill = el("coinPill"); // falls du Coins-Pill eingebaut hast
+
+
 // ---------------- Papa-Begleiter (Companion) ----------------
 let companionEl = null;
 
@@ -77,7 +85,7 @@ function loadJSON(key, fallback) {
 function saveJSON(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
 
 // ---------------- State / Profile ----------------
-let state = loadJSON(STATE_KEY, { level: 1, streak: 0, score: 0 });
+let state = loadJSON(STATE_KEY, { level: 1, streak: 0, score: 0, coins: 0 });
 let profile = loadJSON(PROFILE_KEY, { name: "Mariana", theme: "mint" });
 
 // topic stats: { topic: { correct: n, wrong: n } }
@@ -106,6 +114,8 @@ function renderStats() {
   levelPill.textContent = `Level ${state.level}`;
   streakPill.textContent = `Streak ${state.streak}`;
   scorePill.textContent = `Punkte ${state.score}`;
+  if (coinPill) coinPill.textContent = `Coins ${state.coins ?? 0}`;
+
 }
 
 function saveAll() {
@@ -394,6 +404,42 @@ const MSG = {
   ]
 };
 
+let toastTimer = null;
+
+function showBadge({ icon = "🏆", title = "Achievement!", sub = "Nice!" } = {}) {
+  badgeIcon.textContent = icon;
+  badgeTitle.textContent = title;
+  badgeSub.textContent = sub;
+
+  badgeToast.hidden = false;
+  badgeToast.classList.remove("hide");
+  badgeToast.classList.add("show");
+
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    badgeToast.classList.remove("show");
+    badgeToast.classList.add("hide");
+    setTimeout(() => { badgeToast.hidden = true; }, 220);
+  }, 1400);
+}
+
+function burstConfetti(count = 24) {
+  if (!fxLayer) return;
+  const w = window.innerWidth;
+
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement("div");
+    p.className = "confetti";
+    p.style.left = `${Math.random() * w}px`;
+    p.style.setProperty("--dur", `${900 + Math.random() * 700}ms`);
+    p.style.opacity = `${0.7 + Math.random() * 0.3}`;
+    p.style.transform = `translateY(-20px) rotate(${Math.random()*180}deg)`;
+
+    fxLayer.appendChild(p);
+    setTimeout(() => p.remove(), 2000);
+  }
+}
+
 
 function checkAnswer() {
   if (!current) return;
@@ -422,16 +468,19 @@ function checkAnswer() {
     daily.solved += 1;
     saveDaily(daily);
     renderDaily();
+    state.coins = (state.coins ?? 0) + 1;
     setCompanionMessage(pick(MSG.correct));
 
-    if (state.streak === 5) setCompanionMessage(pick(MSG.streak5));
-    if (state.streak === 10) setCompanionMessage(pick(MSG.streak10));
-    if (state.streak === 15) setCompanionMessage(pick(MSG.streak15));
+    if (state.streak === 5)  { showBadge({icon:"🔥", title:"Streak 5!",  sub:"Flow gestartet."}); burstConfetti(18); }
+    if (state.streak === 10) { showBadge({icon:"⚡️", title:"Streak 10!", sub:"Richtig stark!"}); burstConfetti(26); }
+    if (state.streak === 15) { showBadge({icon:"👑", title:"Streak 15!", sub:"Unaufhaltbar!"}); burstConfetti(34); }
 
     // Tagesziel-Message, wenn gerade erreicht
     if (daily.solved === DAILY_TARGET) {
-      setCompanionMessage(pick(MSG.goalDone), "Papa (Mission)");
-    }
+  showBadge({icon:"🏆", title:"Tagesziel 15/15!", sub:"Mission complete."});
+  burstConfetti(40);
+}
+
 
 
   } else {
@@ -452,7 +501,7 @@ function checkAnswer() {
 }
 
 function resetProgress() {
-  state = { level: 1, streak: 0, score: 0 };
+state = { level: 1, streak: 0, score: 0, coins: 0 };
   topicStats = {
     terms: { correct: 0, wrong: 0 },
     linear: { correct: 0, wrong: 0 },
