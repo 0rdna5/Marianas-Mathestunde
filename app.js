@@ -470,13 +470,17 @@ function openModal() { modalBackdrop.hidden = false; }
 function closeModal() { modalBackdrop.hidden = true; }
 
 profileBtn.addEventListener("click", openModal);
-closeModalBtn.addEventListener("click", closeModal);
+closeModalBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  closeModal();
+});
 modalBackdrop.addEventListener("click", (e) => { if (e.target === modalBackdrop) closeModal(); });
 
-saveProfileBtn.addEventListener("click", () => {
+saveProfileBtn.addEventListener("click", (e) => {
+  e.preventDefault();
   profile = {
     name: (playerNameInput.value || "Mariana").trim().slice(0, 20),
-    theme: themeSelect.value || "mint"
+    theme: themeSelect.value || "cottoncandy"
   };
   saveAll();
   applyProfile();
