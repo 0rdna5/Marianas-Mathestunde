@@ -9,7 +9,14 @@
 <body>
   <main class="app">
     <header class="topbar">
-      <h1>Marianas Mathestunde</h1>
+      <div class="brand">
+        <div class="avatar" id="avatar">M</div>
+        <div class="brandText">
+          <h1>Marianas Mathestunde</h1>
+          <div class="subtitle" id="subtitle">Dein tägliches Mathe-Training</div>
+        </div>
+      </div>
+
       <div class="stats">
         <span id="levelPill" class="pill">Level 1</span>
         <span id="streakPill" class="pill">Streak 0</span>
@@ -18,16 +25,23 @@
     </header>
 
     <section class="card">
-      <div class="row">
-        <label for="topic">Thema</label>
-        <select id="topic">
-          <option value="mix">Mix</option>
-          <option value="integers">Ganze Zahlen</option>
-          <option value="fractions">Brüche</option>
-          <option value="decimals">Dezimalzahlen</option>
-          <option value="percent">Prozent</option>
-          <option value="equations">Gleichungen</option>
-        </select>
+      <div class="toolbar">
+        <div class="control">
+          <label for="topic">Thema</label>
+          <select id="topic">
+            <option value="mix">Mix (AHS)</option>
+            <option value="terms">Terme</option>
+            <option value="equations">Gleichungen</option>
+            <option value="powers">Potenzen</option>
+            <option value="roots">Wurzeln</option>
+            <option value="percent">Prozent</option>
+            <option value="linear">Lineare Funktionen</option>
+            <option value="geometry">Geometrie</option>
+            <option value="pythagoras">Pythagoras</option>
+          </select>
+        </div>
+
+        <button id="profileBtn" class="ghost small">Profil</button>
       </div>
 
       <div class="qbox">
@@ -52,6 +66,38 @@
     <footer class="footer">
       <small>Offline-fähig (Browser) • Fortschritt wird lokal gespeichert</small>
     </footer>
+
+    <!-- Profil-Modal -->
+    <div class="modalBackdrop" id="modalBackdrop" hidden>
+      <div class="modal">
+        <div class="modalHead">
+          <h2>Profil</h2>
+          <button class="ghost small" id="closeModalBtn">Schließen</button>
+        </div>
+
+        <div class="modalBody">
+          <div class="control">
+            <label for="playerName">Name</label>
+            <input id="playerName" placeholder="z.B. Mariana" maxlength="20" />
+          </div>
+
+          <div class="control">
+            <label for="theme">Design</label>
+            <select id="theme">
+              <option value="mint">Mint Night</option>
+              <option value="berry">Berry Pop</option>
+              <option value="gold">Golden Study</option>
+            </select>
+          </div>
+
+          <button id="saveProfileBtn">Speichern</button>
+        </div>
+
+        <div class="modalFoot">
+          <small>Tipp: Name + Theme werden im Browser gespeichert.</small>
+        </div>
+      </div>
+    </div>
   </main>
 
   <script src="app.js"></script>
