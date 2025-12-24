@@ -12,6 +12,33 @@ const levelPill = el("levelPill");
 const streakPill = el("streakPill");
 const scorePill = el("scorePill");
 
+// ---------------- Papa-Begleiter (Companion) ----------------
+let companionEl = null;
+
+function ensureCompanion() {
+  if (companionEl) return;
+
+  companionEl = document.createElement("div");
+  companionEl.className = "companion";
+  companionEl.innerHTML = `
+    <div class="companionIcon">👨‍👧</div>
+    <div class="companionText">
+      <div class="companionTitle">Papa</div>
+      <div class="companionMsg">Los geht’s – du schaffst das.</div>
+    </div>
+  `;
+
+  // direkt UNTER dem Feedback einfügen
+  feedbackEl.insertAdjacentElement("afterend", companionEl);
+}
+
+function setCompanionMessage(msg, title = "Papa") {
+  ensureCompanion();
+  companionEl.querySelector(".companionTitle").textContent = title;
+  companionEl.querySelector(".companionMsg").textContent = msg;
+}
+
+
 const checkBtn = el("checkBtn");
 const skipBtn = el("skipBtn");
 const newBtn = el("newBtn");
@@ -330,6 +357,44 @@ function newQuestion() {
   answerEl.focus();
 }
 
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+const MSG = {
+  correct: [
+    "Yes! Genau so. 🧠✨",
+    "Sauber gerechnet – ich bin stolz auf dich!",
+    "Boom. Treffer. Weiter so!",
+    "Richtig! Du wirst gerade richtig schnell."
+  ],
+  wrong: [
+    "Kein Stress – Fehler sind Trainingspunkte. Versuch’s nochmal!",
+    "Fast! Schau kurz auf den Tipp, dann packst du’s.",
+    "Das war knapp daneben. Wir knacken das gemeinsam.",
+    "Alles gut. Einmal ruhig durchrechnen – du kannst das."
+  ],
+  streak5: [
+    "5er-Streak! Jetzt bist du im Flow!",
+    "5 richtige am Stück – das ist Game-Mode.",
+    "Streak 5: Mathe-Boss in Ausbildung!"
+  ],
+  streak10: [
+    "10er-Streak!!! Das ist richtig stark. 🔥",
+    "Wow: 10 am Stück – ich feier das!",
+    "Level-Up Vibes: 10er-Streak!"
+  ],
+  streak15: [
+    "15er-Streak… du bist heute unaufhaltbar!",
+    "Das ist schon Profi-Niveau. 15 am Stück!",
+    "Legendär. 15er-Streak!"
+  ],
+  goalDone: [
+    "Tagesziel erreicht! 15/15 – Belohnung verdient. 🏆",
+    "Yes! Heute gewonnen: 15 richtige. Mega!",
+    "Mission complete: 15 richtige. Ich bin richtig stolz."
+  ]
+};
+
+
 function checkAnswer() {
   if (!current) return;
 
@@ -357,6 +422,17 @@ function checkAnswer() {
     daily.solved += 1;
     saveDaily(daily);
     renderDaily();
+    setCompanionMessage(pick(MSG.correct));
+
+    if (state.streak === 5) setCompanionMessage(pick(MSG.streak5));
+    if (state.streak === 10) setCompanionMessage(pick(MSG.streak10));
+    if (state.streak === 15) setCompanionMessage(pick(MSG.streak15));
+
+    // Tagesziel-Message, wenn gerade erreicht
+    if (daily.solved === DAILY_TARGET) {
+      setCompanionMessage(pick(MSG.goalDone), "Papa (Mission)");
+    }
+
 
   } else {
     state.streak = 0;
@@ -366,6 +442,8 @@ function checkAnswer() {
     feedbackEl.textContent = `❌ Nicht ganz. Richtige Antwort: ${shown}`;
     daily = loadDaily();
     renderDaily();
+    setCompanionMessage(pick(MSG.wrong));
+
 
   }
 
@@ -418,6 +496,7 @@ topicEl.addEventListener("change", newQuestion);
   applyProfile();
   renderStats();
   renderDaily();
+  setCompanionMessage("Heute 15 richtige – und ich bin bei jeder Aufgabe dabei.");
   await loadDeck();
   newQuestion();
 })();
