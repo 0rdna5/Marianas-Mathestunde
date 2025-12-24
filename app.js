@@ -466,8 +466,8 @@ function resetProgress() {
 }
 
 // ---------------- Modal / Profile ----------------
-function openModal() { modalBackdrop.hidden = false; }
-function closeModal() { modalBackdrop.hidden = true; }
+function openModal()  { modalBackdrop.classList.add("open"); }
+function closeModal() { modalBackdrop.classList.remove("open"); }
 
 profileBtn.addEventListener("click", openModal);
 closeModalBtn.addEventListener("click", (e) => {
@@ -496,6 +496,7 @@ answerEl.addEventListener("keydown", (e) => { if (e.key === "Enter") checkAnswer
 topicEl.addEventListener("change", newQuestion);
 
 // Init
+closeModal();
 (async function init() {
   applyProfile();
   renderStats();
