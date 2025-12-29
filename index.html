@@ -130,15 +130,6 @@
 
         <div class="modalBody">
           <div class="control">
-            <label for="profileSelect">Profil auswählen</label>
-            <div class="inlineRow">
-              <select id="profileSelect"></select>
-              <button id="newProfileBtn" class="ghost tiny" type="button">Neues Profil</button>
-              <button id="deleteProfileBtn" class="ghost tiny danger" type="button">Löschen</button>
-            </div>
-          </div>
-
-          <div class="control">
             <label for="playerName">Name</label>
             <input id="playerName" placeholder="z.B. Mariana" maxlength="20" />
           </div>
@@ -159,48 +150,6 @@
               <span>Erklärmodus aktiv (zeigt den vollständigen Rechenweg schneller)</span>
             </label>
             <small class="muted">Gut für Eltern/Coach: Hinweis-Stufe 3 darf sofort erscheinen.</small>
-          </div>
-
-          <div class="parentMode">
-            <div class="parentHead">
-              <h3>Elternmodus</h3>
-              <label class="checkboxLabel">
-                <input type="checkbox" id="parentModeToggle" />
-                <span>Eltern steuern Themen & Schwierigkeit</span>
-              </label>
-            </div>
-            <div class="parentGrid">
-              <div class="parentBox">
-                <div class="parentBoxTitle">Themen-Auswahl</div>
-                <div id="topicCheckboxes" class="topicCheckboxes"></div>
-              </div>
-              <div class="parentBox">
-                <div class="parentBoxTitle">Zahlen & Regeln</div>
-                <div class="control inlineInputs">
-                  <label>Zahlenbereich</label>
-                  <div class="inlineRow">
-                    <input id="numberRangeMin" type="number" class="tinyInput" placeholder="Min" />
-                    <input id="numberRangeMax" type="number" class="tinyInput" placeholder="Max" />
-                  </div>
-                </div>
-                <label class="checkboxLabel"><input type="checkbox" id="allowNegative" /> <span>Negative Zahlen erlauben</span></label>
-                <label class="checkboxLabel"><input type="checkbox" id="allowCarryBorrow" /> <span>Übertrag/Leihen erlauben</span></label>
-              </div>
-              <div class="parentBox">
-                <div class="parentBoxTitle">Tempo & Level</div>
-                <div class="control inlineInputs">
-                  <label>Zeit-Ziel (Sek.)</label>
-                  <input id="timeGoalSeconds" type="number" min="3" max="60" class="tinyInput" />
-                </div>
-                <div class="control inlineInputs">
-                  <label>Level-Spanne</label>
-                  <div class="inlineRow">
-                    <input id="minLevel" type="number" min="1" max="10" class="tinyInput" />
-                    <input id="maxLevel" type="number" min="1" max="10" class="tinyInput" />
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
 
           <div class="shop">
