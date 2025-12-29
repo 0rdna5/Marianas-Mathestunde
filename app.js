@@ -11,6 +11,7 @@ const topicEl = el("topic");
 const levelPill = el("levelPill");
 const streakPill = el("streakPill");
 const scorePill = el("scorePill");
+const questListEl = el("questList");
 
 const fxLayer = el("fxLayer");
 const badgeToast = el("badgeToast");
@@ -141,6 +142,7 @@ let topicStats = { ...DEFAULT_TOPIC_STATS, ...loadJSON(STATS_KEY, DEFAULT_TOPIC_
 // loaded card deck
 let deck = { meta: {}, cards: [] };
 let current = null;
+let questionStartedAt = null;
 
 function themeName(id) {
   return THEMES.find((t) => t.id === id)?.name || id;
@@ -296,11 +298,88 @@ function todayKey() {
   return `${y}-${m}-${da}`;
 }
 
+function topicLabel(topic) {
+  if (!topic) return "";
+  const opts = Array.from(topicEl?.options || []);
+  return opts.find((o) => o.value === topic)?.textContent || topic;
+}
+
+function computeWeakTopic() {
+  let weakest = null;
+  let weakestAcc = Infinity;
+
+  Object.entries(topicStats || {}).forEach(([topic, stats]) => {
+    const total = (stats.correct || 0) + (stats.wrong || 0);
+    if (total < 3) return;
+    const acc = total === 0 ? 1 : (stats.correct || 0) / total;
+    if (acc < weakestAcc) {
+      weakestAcc = acc;
+      weakest = topic;
+    }
+  });
+
+  if (!weakest) {
+    const selected = topicEl?.value;
+    if (selected && selected !== "mix") return selected;
+    return "linear";
+  }
+  return weakest;
+}
+
+function defaultDaily(dateKey = todayKey()) {
+  const weakTopic = computeWeakTopic();
+  return {
+    dateKey,
+    day: dateKey,
+    targetCount: DAILY_TARGET,
+    doneCount: 0,
+    solved: 0,
+    correctStreakToday: 0,
+    fastCorrectToday: 0,
+    weakTopicCorrectToday: 0,
+    quests: {
+      A: { progress: 0, goal: 5, done: false, claimed: false },
+      B: { progress: 0, goal: 3, done: false, claimed: false },
+      C: { progress: 0, goal: 5, done: false, claimed: false, weakTopic }
+    }
+  };
+}
+
+function normalizeDaily(raw) {
+  const today = todayKey();
+  if (!raw) return defaultDaily(today);
+
+  const sameDay = (raw.day || raw.dateKey) === today;
+  if (!sameDay) return defaultDaily(today);
+
+  const base = defaultDaily(today);
+  const data = { ...base, ...raw, dateKey: today, day: today };
+
+  data.targetCount = Number.isFinite(data.targetCount) ? data.targetCount : DAILY_TARGET;
+  const solved = Number.isFinite(data.doneCount)
+    ? data.doneCount
+    : Number.isFinite(data.solved)
+      ? data.solved
+      : 0;
+  data.doneCount = Math.max(0, solved);
+  data.solved = data.doneCount;
+  data.correctStreakToday = data.correctStreakToday || 0;
+  data.fastCorrectToday = data.fastCorrectToday || 0;
+  data.weakTopicCorrectToday = data.weakTopicCorrectToday || 0;
+
+  const weakTopic = data?.quests?.C?.weakTopic || computeWeakTopic();
+  data.quests = {
+    A: { ...base.quests.A, ...(data.quests?.A || {}) },
+    B: { ...base.quests.B, ...(data.quests?.B || {}) },
+    C: { ...base.quests.C, ...(data.quests?.C || {}), weakTopic }
+  };
+
+  return data;
+}
+
 function loadDaily() {
-  const t = todayKey();
-  const stored = loadJSON(DAILY_KEY, { day: t, solved: 0 });
-  if (stored.day !== t) return { day: t, solved: 0 }; // new day -> reset
-  return stored;
+  const stored = loadJSON(DAILY_KEY, null);
+  return normalizeDaily(stored);
 }
 
 function saveDaily(d) { saveJSON(DAILY_KEY, d); }
@@ -308,11 +387,64 @@ function saveDaily(d) { saveJSON(DAILY_KEY, d); }
 let daily = loadDaily();
 
 function renderDaily() {
-  const solved = Math.min(daily.solved, DAILY_TARGET);
+  const solved = Math.min(daily.doneCount, DAILY_TARGET);
   dailyText.textContent = `Tagesziel: ${solved}/${DAILY_TARGET}`;
   const pct = Math.round((solved / DAILY_TARGET) * 100);
   barFill.style.width = `${Math.min(100, pct)}%`;
   dailyDone.hidden = solved < DAILY_TARGET;
+}
+
+function renderDailyQuests() {
+  if (!questListEl) return;
+  questListEl.innerHTML = "";
+  const q = daily.quests || {};
+  const quests = [
+    {
+      id: "A",
+      title: "5 richtig ohne Fehler",
+      progress: q.A?.progress || 0,
+      goal: q.A?.goal || 5,
+      done: !!q.A?.done
+    },
+    {
+      id: "B",
+      title: "3 Aufgaben unter 10 Sekunden",
+      progress: q.B?.progress || 0,
+      goal: q.B?.goal || 3,
+      done: !!q.B?.done
+    },
+    {
+      id: "C",
+      title: `5 Aufgaben in: ${topicLabel(q.C?.weakTopic || computeWeakTopic())}`,
+      progress: q.C?.progress || 0,
+      goal: q.C?.goal || 5,
+      done: !!q.C?.done
+    }
+  ];
+
+  quests.forEach((quest) => {
+    const row = document.createElement("div");
+    row.className = "questRow";
+
+    const info = document.createElement("div");
+    info.className = "questInfo";
+    const title = document.createElement("div");
+    title.className = "questTitle";
+    title.textContent = quest.title;
+    const progress = document.createElement("div");
+    progress.className = "questProgress";
+    progress.textContent = `${quest.progress}/${quest.goal}`;
+    info.appendChild(title);
+    info.appendChild(progress);
+
+    const status = document.createElement("div");
+    status.className = "questStatus" + (quest.done ? " questDone" : "");
+    status.textContent = quest.done ? "Abgeschlossen" : "Läuft";
+
+    row.appendChild(info);
+    row.appendChild(status);
+    questListEl.appendChild(row);
+  });
 }
 
 
@@ -610,6 +742,7 @@ function newQuestion() {
   feedbackEl.textContent = "";
   answerEl.value = "";
   answerEl.focus();
+  questionStartedAt = Date.now();
 }
 
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
@@ -685,12 +818,73 @@ function burstConfetti(count = 24) {
   }
 }
 
+function grantQuestReward(questId) {
+  const quest = daily.quests?.[questId];
+  if (!quest || quest.claimed) return;
+  quest.claimed = true;
+  const bonus = 5;
+  state.coins = (state.coins ?? 0) + bonus;
+  showBadge({ icon: "🎯", title: `Quest ${questId} geschafft!`, sub: `+${bonus} Coins` });
+  burstConfetti(22);
+}
+
+function updateQuestsOnAnswer({ correct, solveTime, topic }) {
+  const q = daily.quests;
+
+  if (!correct) {
+    daily.correctStreakToday = 0;
+    if (!q.A.done) q.A.progress = 0;
+    saveDaily(daily);
+    return;
+  }
+
+  // Quest A: 5 richtig ohne Fehler
+  daily.correctStreakToday = (daily.correctStreakToday || 0) + 1;
+  if (!q.A.done) {
+    q.A.progress = Math.min(q.A.goal, daily.correctStreakToday);
+    if (q.A.progress >= q.A.goal) {
+      q.A.done = true;
+      grantQuestReward("A");
+    }
+  }
+
+  // Quest B: 3 Aufgaben unter 10 Sekunden
+  if (solveTime != null && solveTime <= 10) {
+    daily.fastCorrectToday = (daily.fastCorrectToday || 0) + 1;
+    if (!q.B.done) {
+      q.B.progress = Math.min(q.B.goal, daily.fastCorrectToday);
+      if (q.B.progress >= q.B.goal) {
+        q.B.done = true;
+        grantQuestReward("B");
+      }
+    }
+  }
+
+  // Quest C: 5 Aufgaben im Weak-Topic
+  const weakTopic = q.C.weakTopic || computeWeakTopic();
+  q.C.weakTopic = weakTopic;
+  if (topic === weakTopic) {
+    daily.weakTopicCorrectToday = (daily.weakTopicCorrectToday || 0) + 1;
+    if (!q.C.done) {
+      q.C.progress = Math.min(q.C.goal, daily.weakTopicCorrectToday);
+      if (q.C.progress >= q.C.goal) {
+        q.C.done = true;
+        grantQuestReward("C");
+      }
+    }
+  }
+
+  saveDaily(daily);
+}
+
 
 function checkAnswer() {
   if (!current) return;
 
   const topic = current.topic;
   let ok = false;
+  const now = Date.now();
+  const solveTime = questionStartedAt ? (now - questionStartedAt) / 1000 : null;
 
   if (current.answerType === "number") {
     const user = Number(normalizeNumber(answerEl.value));
@@ -701,6 +895,8 @@ function checkAnswer() {
     ok = user === target;
   }
 
+  daily = loadDaily();
+
   if (ok) {
     state.streak += 1;
     state.score += 10 + Math.min(10, state.level);
@@ -710,12 +906,14 @@ function checkAnswer() {
     stats.correct += 1;
 
     feedbackEl.textContent = "✅ Richtig!";
-    daily = loadDaily();      // falls Mitternacht überschritten wurde
-    daily.solved += 1;
-    saveDaily(daily);
+    daily.doneCount += 1;
+    daily.solved = daily.doneCount;
     renderDaily();
     state.coins = (state.coins ?? 0) + 1;
     setCompanionMessage(pick(MSG.correct));
+
+    updateQuestsOnAnswer({ correct: true, solveTime, topic });
+    renderDailyQuests();
 
     if (state.streak === 5)  { showBadge({icon:"🔥", title:"Streak 5!",  sub:"Flow gestartet."}); burstConfetti(18); }
     if (state.streak === 10) { showBadge({icon:"⚡️", title:"Streak 10!", sub:"Richtig stark!"}); burstConfetti(26); }
@@ -733,13 +931,16 @@ function checkAnswer() {
 
     const shown = String(current.a).replace(".", ",");
     feedbackEl.textContent = `❌ Nicht ganz. Richtige Antwort: ${shown}`;
-    daily = loadDaily();
     renderDaily();
     setCompanionMessage(pick(MSG.wrong));
+
+    updateQuestsOnAnswer({ correct: false, solveTime, topic });
+    renderDailyQuests();
 
 
   }
 
+  saveDaily(daily);
   saveAll();
   renderStats();
 }
@@ -796,6 +997,7 @@ closeModal();
   applyProfile();
   renderStats();
   renderDaily();
+  renderDailyQuests();
   setCompanionMessage("Heute 15 richtige – und ich bin bei jeder Aufgabe dabei.");
   await loadDeck();
   newQuestion();

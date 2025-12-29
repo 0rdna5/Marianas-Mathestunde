@@ -24,16 +24,21 @@
   <span id="coinPill" class="pill">Coins 0</span>
 
 
-  <div class="daily">
-    <div class="dailyRow">
-      <span id="dailyText" class="dailyText">Tagesziel: 0/15</span>
-      <span id="dailyDone" class="dailyDone" hidden>✅ Ziel erreicht!</span>
+    <div class="daily">
+      <div class="dailyRow">
+        <span id="dailyText" class="dailyText">Tagesziel: 0/15</span>
+        <span id="dailyDone" class="dailyDone" hidden>✅ Ziel erreicht!</span>
+      </div>
+      <div class="bar">
+        <div id="barFill" class="barFill" style="width:0%"></div>
+      </div>
     </div>
-    <div class="bar">
-      <div id="barFill" class="barFill" style="width:0%"></div>
+
+    <div class="dailyQuests" id="dailyQuests">
+      <div class="dailyQuestHead">Daily Quests</div>
+      <div id="questList" class="questList"></div>
     </div>
   </div>
-</div>
 
       <div class="scene">
         <div class="holo">
