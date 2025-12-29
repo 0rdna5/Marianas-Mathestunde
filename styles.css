@@ -277,6 +277,97 @@ button.small{ padding:8px 10px; border-radius:14px; font-weight:800; }
 .modalBody{ padding:14px; display:flex; flex-direction:column; gap:12px; }
 .modalHead{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .modalHead h2{ margin:0; font-size:18px; }
+.shop{
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:18px;
+  padding:12px;
+  background: rgba(255,255,255,.04);
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.shopHead{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+.shopTitle{
+  margin:0;
+  font-size:16px;
+}
+.shopSub{
+  color:var(--muted);
+  font-size:13px;
+}
+.shopCoins{
+  background: var(--card);
+  border-radius: 14px;
+  padding:8px 12px;
+  border:1px solid rgba(255,255,255,.10);
+  font-weight:800;
+  font-size:13px;
+}
+.shopList{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.shopItem{
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;
+  padding:10px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  background: rgba(255,255,255,.03);
+  justify-content:space-between;
+}
+.shopInfo{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.shopItemName{
+  font-weight:900;
+}
+.shopPrice{
+  color:var(--muted);
+  font-size:13px;
+}
+.shopActions{
+  display:flex;
+  gap:6px;
+  align-items:center;
+}
+.lockedBadge{
+  background: rgba(255,255,255,.06);
+  border-radius:999px;
+  padding:6px 10px;
+  font-size:12px;
+  color:var(--muted);
+  border:1px solid rgba(255,255,255,.08);
+}
+.activeBadge{
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color:#070914;
+  border-radius:999px;
+  padding:6px 10px;
+  font-size:12px;
+  font-weight:900;
+  box-shadow: 0 10px 20px rgba(0,0,0,.18);
+}
+.shopMessage{
+  min-height:18px;
+  color: var(--muted);
+  font-size:13px;
+}
+.shopButton[disabled]{
+  opacity:.6;
+  cursor: not-allowed;
+}
+.lockedOption{
+  color: rgba(255,255,255,.45);
+}
 
 /* FX Layer (confetti) */
 .fxLayer{
