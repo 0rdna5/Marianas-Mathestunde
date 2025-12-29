@@ -18,6 +18,10 @@ const badgeIcon = el("badgeIcon");
 const badgeTitle = el("badgeTitle");
 const badgeSub = el("badgeSub");
 const coinPill = el("coinPill"); // falls du Coins-Pill eingebaut hast
+const streakFill = el("streakFill");
+const streakValue = el("streakValue");
+const coinFill = el("coinFill");
+const coinValue = el("coinValue");
 
 
 // ---------------- Papa-Begleiter (Companion) ----------------
@@ -73,6 +77,7 @@ const STATS_KEY = "mmm_topic_stats_v1"; // adaptive repetition
 const CARDS_KEY = "mmm_cards_cache_v1";
 const DAILY_KEY = "mmm_daily_v1";
 const DAILY_TARGET = 15;
+const DEFAULT_THEME = "cottoncandy";
 
 
 function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
@@ -86,16 +91,26 @@ function saveJSON(key, value) { localStorage.setItem(key, JSON.stringify(value))
 
 // ---------------- State / Profile ----------------
 let state = loadJSON(STATE_KEY, { level: 1, streak: 0, score: 0, coins: 0 });
-let profile = loadJSON(PROFILE_KEY, { name: "Mariana", theme: "mint" });
+let profile = loadJSON(PROFILE_KEY, { name: "Mariana", theme: DEFAULT_THEME });
 
 // topic stats: { topic: { correct: n, wrong: n } }
-let topicStats = loadJSON(STATS_KEY, {
-  terms: { correct: 0, wrong: 0 },
-  linear: { correct: 0, wrong: 0 },
-  powers: { correct: 0, wrong: 0 },
-  roots: { correct: 0, wrong: 0 },
-  geometry: { correct: 0, wrong: 0 }
-});
+const ALL_TOPICS = [
+  "terms",
+  "equations",
+  "powers",
+  "roots",
+  "percent",
+  "linear",
+  "geometry",
+  "pythagoras"
+];
+
+const DEFAULT_TOPIC_STATS = ALL_TOPICS.reduce((acc, topic) => {
+  acc[topic] = { correct: 0, wrong: 0 };
+  return acc;
+}, {});
+
+let topicStats = { ...DEFAULT_TOPIC_STATS, ...loadJSON(STATS_KEY, DEFAULT_TOPIC_STATS) };
 
 // loaded card deck
 let deck = { meta: {}, cards: [] };
@@ -105,9 +120,9 @@ function applyProfile() {
   const name = (profile.name || "Mariana").trim();
   avatarEl.textContent = name ? name[0].toUpperCase() : "M";
   subtitleEl.textContent = `Für ${name} • AHS Unterstufe`;
-  document.documentElement.setAttribute("data-theme", profile.theme || "mint");
+  document.documentElement.setAttribute("data-theme", profile.theme || DEFAULT_THEME);
   playerNameInput.value = name;
-  themeSelect.value = profile.theme || "mint";
+  themeSelect.value = profile.theme || DEFAULT_THEME;
 }
 
 function renderStats() {
@@ -115,6 +130,23 @@ function renderStats() {
   streakPill.textContent = `Streak ${state.streak}`;
   scorePill.textContent = `Punkte ${state.score}`;
   if (coinPill) coinPill.textContent = `Coins ${state.coins ?? 0}`;
+
+  const streakCap = 15;
+  if (streakFill) {
+    const pct = Math.min(1, (state.streak || 0) / streakCap);
+    streakFill.style.width = `${Math.round(pct * 100)}%`;
+  }
+  if (streakValue) streakValue.textContent = `${Math.min(state.streak, streakCap)}/${streakCap}`;
+
+  if (coinFill || coinValue) {
+    const coins = state.coins ?? 0;
+    const coinTarget = 20;
+    const pctCoin = Math.min(1, coins / coinTarget);
+    if (coinFill) coinFill.style.width = `${Math.round(pctCoin * 100)}%`;
+
+    const boost = 1 + Math.min(1.5, (state.streak || 0) * 0.05);
+    if (coinValue) coinValue.textContent = `x${boost.toFixed(1)}`;
+  }
 
 }
 
@@ -207,6 +239,13 @@ function weightedPickTopic() {
     if (r <= 0) return topics[i];
   }
   return topics[0];
+}
+
+function ensureTopicStats(topic) {
+  if (!topicStats[topic]) {
+    topicStats[topic] = { correct: 0, wrong: 0 };
+  }
+  return topicStats[topic];
 }
 
 // ---------------- Generators (procedural) ----------------
@@ -461,7 +500,8 @@ function checkAnswer() {
     state.score += 10 + Math.min(10, state.level);
     if (state.streak % 5 === 0) state.level += 1;
 
-    topicStats[topic].correct += 1;
+    const stats = ensureTopicStats(topic);
+    stats.correct += 1;
 
     feedbackEl.textContent = "✅ Richtig!";
     daily = loadDaily();      // falls Mitternacht überschritten wurde
@@ -477,15 +517,13 @@ function checkAnswer() {
 
     // Tagesziel-Message, wenn gerade erreicht
     if (daily.solved === DAILY_TARGET) {
-  showBadge({icon:"🏆", title:"Tagesziel 15/15!", sub:"Mission complete."});
-  burstConfetti(40);
-}
-
-
-
+      showBadge({ icon:"🏆", title:"Tagesziel 15/15!", sub:"Mission complete." });
+      burstConfetti(40);
+    }
   } else {
     state.streak = 0;
-    topicStats[topic].wrong += 1;
+    const stats = ensureTopicStats(topic);
+    stats.wrong += 1;
 
     const shown = String(current.a).replace(".", ",");
     feedbackEl.textContent = `❌ Nicht ganz. Richtige Antwort: ${shown}`;
@@ -501,14 +539,8 @@ function checkAnswer() {
 }
 
 function resetProgress() {
-state = { level: 1, streak: 0, score: 0, coins: 0 };
-  topicStats = {
-    terms: { correct: 0, wrong: 0 },
-    linear: { correct: 0, wrong: 0 },
-    powers: { correct: 0, wrong: 0 },
-    roots: { correct: 0, wrong: 0 },
-    geometry: { correct: 0, wrong: 0 }
-  };
+  state = { level: 1, streak: 0, score: 0, coins: 0 };
+  topicStats = { ...DEFAULT_TOPIC_STATS };
   saveAll();
   renderStats();
   newQuestion();
