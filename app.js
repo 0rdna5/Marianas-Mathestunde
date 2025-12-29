@@ -116,6 +116,10 @@ const THEMES = [
   { id: "lavender", name: "Lavender Glow" },
   { id: "skyrose", name: "Sky Rose" }
 ];
+
+function dailyTarget() {
+  return daily?.targetCount ?? DAILY_TARGET;
+}
 const THEME_PRICES = {
   [DEFAULT_THEME]: 0,
   lavender: 20,
@@ -835,8 +839,10 @@ function nextGoalSuggestion(weakTopic) {
   const allowed = new Set(enabledTopics());
   const topic = weakTopic && allowed.has(weakTopic) ? weakTopic : computeWeakTopic();
 
-  if (daily && daily.doneCount < DAILY_TARGET) {
-    const remaining = Math.max(0, DAILY_TARGET - (daily.doneCount || 0));
+  const target = dailyTarget();
+
+  if (daily && daily.doneCount < target) {
+    const remaining = Math.max(0, target - (daily.doneCount || 0));
     const focusTopic = topicLabel(daily?.quests?.C?.weakTopic || topic);
     return `Heute fehlen noch ${remaining} Aufgaben. Fokus: ${focusTopic || "dein Lieblingsthema"}.`;
   }
@@ -995,11 +1001,12 @@ function saveDaily(d) {
 let daily = loadDaily();
 
 function renderDaily() {
-  const solved = Math.min(daily.doneCount, DAILY_TARGET);
-  dailyText.textContent = `Tagesziel: ${solved}/${DAILY_TARGET}`;
-  const pct = Math.round((solved / DAILY_TARGET) * 100);
+  const target = dailyTarget();
+  const solved = Math.min(daily.doneCount, target);
+  dailyText.textContent = `Tagesziel: ${solved}/${target}`;
+  const pct = Math.round((solved / target) * 100);
   barFill.style.width = `${Math.min(100, pct)}%`;
-  dailyDone.hidden = solved < DAILY_TARGET;
+  dailyDone.hidden = solved < target;
 }
 
 function renderDailyQuests() {
@@ -1738,9 +1745,10 @@ function checkAnswer() {
     if (state.streak === 10) { showBadge({icon:"⚡️", title:"Streak 10!", sub:"Richtig stark!"}); burstConfetti(26); }
     if (state.streak === 15) { showBadge({icon:"👑", title:"Streak 15!", sub:"Unaufhaltbar!"}); burstConfetti(34); }
 
+    const target = dailyTarget();
     // Tagesziel-Message, wenn gerade erreicht
-    if (daily.solved === DAILY_TARGET) {
-      showBadge({ icon:"🏆", title:"Tagesziel 15/15!", sub:"Mission complete." });
+    if (daily.solved === target) {
+      showBadge({ icon:"🏆", title:`Tagesziel ${target}/${target}!`, sub:"Mission complete." });
       burstConfetti(40);
       endSession("daily");
     }
