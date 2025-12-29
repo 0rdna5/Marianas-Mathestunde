@@ -77,7 +77,7 @@ const barFill = el("barFill");
 
 const STATE_KEY = "mmm_state_v3";
 const PROFILE_KEY = "mmm_profile_v1";
-const STATS_KEY = "mmm_topic_stats_v1"; // adaptive repetition
+const STATS_KEY = "mmm_topic_stats_v1"; // adaptive repetition & difficulty
 const CARDS_KEY = "mmm_cards_cache_v1";
 const DAILY_KEY = "mmm_daily_v1";
 const DAILY_TARGET = 15;
@@ -97,6 +97,7 @@ const THEME_PRICES = {
 function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 function normalizeNumber(str) { return String(str).trim().replace(",", "."); }
 function nearlyEqual(a, b, eps = 1e-9) { return Math.abs(a - b) < eps; }
+function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 
 function loadJSON(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
@@ -106,6 +107,11 @@ function saveJSON(key, value) { localStorage.setItem(key, JSON.stringify(value))
 // ---------------- State / Profile ----------------
 const DEFAULT_STATE = { level: 1, streak: 0, score: 0, coins: 0 };
 const DEFAULT_PROFILE = { name: "Mariana", theme: DEFAULT_THEME, unlockedThemes: [DEFAULT_THEME] };
+const DIFFICULTY_MIN = 1;
+const DIFFICULTY_MAX = 10;
+const DIFFICULTY_ALPHA = 0.25; // EWMA smoothing for accuracy & time
+const TARGET_SOLVE_TIME_MS = 12000; // kindgerechtes Zieltempo
+const DEBUG_DIFFICULTY = false;
 
 function normalizeProfile(rawProfile) {
   const data = { ...DEFAULT_PROFILE, ...(rawProfile || {}) };
@@ -120,7 +126,7 @@ let state = { ...DEFAULT_STATE, ...loadJSON(STATE_KEY, DEFAULT_STATE) };
 if (!Number.isFinite(state.coins)) state.coins = 0;
 let profile = normalizeProfile(loadJSON(PROFILE_KEY, DEFAULT_PROFILE));
 
-// topic stats: { topic: { correct: n, wrong: n } }
+// topic stats: { topic: { attempts, correct, wrong, recentAccuracy, avgSolveTime, difficultyLevel } }
 const ALL_TOPICS = [
   "terms",
   "equations",
@@ -132,12 +138,43 @@ const ALL_TOPICS = [
   "pythagoras"
 ];
 
-const DEFAULT_TOPIC_STATS = ALL_TOPICS.reduce((acc, topic) => {
-  acc[topic] = { correct: 0, wrong: 0 };
-  return acc;
-}, {});
+function defaultTopicStat() {
+  return {
+    attempts: 0,
+    correct: 0,
+    wrong: 0,
+    recentAccuracy: 0.7,
+    avgSolveTime: TARGET_SOLVE_TIME_MS,
+    difficultyLevel: 1
+  };
+}
 
-let topicStats = { ...DEFAULT_TOPIC_STATS, ...loadJSON(STATS_KEY, DEFAULT_TOPIC_STATS) };
+function normalizeTopicStat(raw = {}) {
+  const base = defaultTopicStat();
+  const attempts = Number.isFinite(raw.attempts) ? raw.attempts : (raw.correct || 0) + (raw.wrong || 0);
+  const correct = Number.isFinite(raw.correct) ? raw.correct : 0;
+  const wrong = Number.isFinite(raw.wrong) ? raw.wrong : 0;
+  const accBase = attempts > 0 ? correct / attempts : base.recentAccuracy;
+  return {
+    attempts,
+    correct,
+    wrong,
+    recentAccuracy: clamp(Number.isFinite(raw.recentAccuracy) ? raw.recentAccuracy : accBase, 0, 1),
+    avgSolveTime: Number.isFinite(raw.avgSolveTime) ? raw.avgSolveTime : base.avgSolveTime,
+    difficultyLevel: clamp(Number.isFinite(raw.difficultyLevel) ? raw.difficultyLevel : base.difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX)
+  };
+}
+
+function normalizeTopicStats(raw) {
+  const stats = {};
+  ALL_TOPICS.forEach((topic) => {
+    stats[topic] = normalizeTopicStat(raw?.[topic] || {});
+  });
+  return stats;
+}
+
+const DEFAULT_TOPIC_STATS = normalizeTopicStats({});
+let topicStats = normalizeTopicStats(loadJSON(STATS_KEY, DEFAULT_TOPIC_STATS));
 
 // loaded card deck
 let deck = { meta: {}, cards: [] };
@@ -480,7 +517,7 @@ const BASE_WEIGHTS = {
 };
 
 function adaptiveWeight(topic) {
-  const s = topicStats[topic] || { correct: 0, wrong: 0 };
+  const s = topicStats[topic] || defaultTopicStat();
   const total = s.correct + s.wrong;
   if (total < 6) return 1.0; // not enough data
   const wrongRate = s.wrong / total; // 0..1
@@ -506,19 +543,74 @@ function weightedPickTopic() {
 
 function ensureTopicStats(topic) {
   if (!topicStats[topic]) {
-    topicStats[topic] = { correct: 0, wrong: 0 };
+    topicStats[topic] = defaultTopicStat();
   }
+  // falls ältere Saves geladen wurden
+  topicStats[topic] = normalizeTopicStat(topicStats[topic]);
   return topicStats[topic];
+}
+
+function levelScaledValue(level, min, max) {
+  const span = max - min;
+  const factor = (clamp(level, DIFFICULTY_MIN, DIFFICULTY_MAX) - DIFFICULTY_MIN) / (DIFFICULTY_MAX - DIFFICULTY_MIN);
+  return min + Math.round(span * factor);
+}
+
+function updateTopicStats({ topic, correct, solveTimeMs }) {
+  const stats = ensureTopicStats(topic);
+  stats.topic = topic;
+  stats.attempts += 1;
+  if (correct) stats.correct += 1; else stats.wrong += 1;
+
+  const accValue = correct ? 1 : 0;
+  stats.recentAccuracy = stats.recentAccuracy == null
+    ? accValue
+    : stats.recentAccuracy * (1 - DIFFICULTY_ALPHA) + accValue * DIFFICULTY_ALPHA;
+
+  if (Number.isFinite(solveTimeMs)) {
+    const time = Math.max(500, solveTimeMs);
+    stats.avgSolveTime = stats.avgSolveTime == null
+      ? time
+      : stats.avgSolveTime * (1 - DIFFICULTY_ALPHA) + time * DIFFICULTY_ALPHA;
+  }
+
+  adjustDifficulty(stats);
+}
+
+function adjustDifficulty(stats) {
+  const prev = stats.difficultyLevel || DIFFICULTY_MIN;
+  let delta = 0;
+
+  if (stats.attempts >= 2) {
+    if (stats.recentAccuracy > 0.85 && stats.avgSolveTime < TARGET_SOLVE_TIME_MS) {
+      delta = 1;
+    } else if (stats.recentAccuracy < 0.55) {
+      delta = -1;
+    }
+  }
+
+  const next = clamp(prev + delta, DIFFICULTY_MIN, DIFFICULTY_MAX);
+  stats.difficultyLevel = next;
+
+  if (DEBUG_DIFFICULTY && delta !== 0) {
+    console.log(`Difficulty change for ${stats.topic || "topic"}: ${prev} -> ${next} (acc=${stats.recentAccuracy.toFixed(2)}, time=${Math.round(stats.avgSolveTime)}ms)`);
+  }
+}
+
+function getTopicDifficulty(topic) {
+  return ensureTopicStats(topic).difficultyLevel || DIFFICULTY_MIN;
 }
 
 // ---------------- Generators (procedural) ----------------
 function genTerms(level) {
   // Klammern + zusammenfassen: a(bx + c) + dx + e
-  const a = randInt(2, 6);
-  const b = randInt(1, 6);
-  const c = randInt(-9, 9);
-  const d = randInt(1, 6);
-  const e = randInt(-12, 12);
+  const maxCoef = levelScaledValue(level, 4, 12);
+  const maxOffset = levelScaledValue(level, 8, 22);
+  const a = randInt(2, maxCoef);
+  const b = randInt(1, maxCoef);
+  const c = randInt(-maxOffset, maxOffset);
+  const d = randInt(1, maxCoef);
+  const e = randInt(-maxOffset, maxOffset);
 
   // expression: a(bx + c) + dx + e
   // simplified: (a*b + d)x + (a*c + e)
@@ -543,9 +635,9 @@ function genTerms(level) {
 
 function genLinear(level) {
   // y = mx + b with integer result
-  const m = randInt(-6, 8);
-  const b = randInt(-12, 12);
-  const x = randInt(-6, 10);
+  const m = randInt(-levelScaledValue(level, 4, 10), levelScaledValue(level, 6, 14));
+  const b = randInt(-levelScaledValue(level, 10, 24), levelScaledValue(level, 10, 28));
+  const x = randInt(-levelScaledValue(level, 6, 14), levelScaledValue(level, 8, 18));
   const y = m * x + b;
   const signB = b >= 0 ? `+ ${b}` : `- ${Math.abs(b)}`;
   return {
@@ -559,8 +651,8 @@ function genLinear(level) {
 
 function genPowers(level) {
   // a^n, keep manageable
-  const a = randInt(2, 9);
-  const n = level < 4 ? randInt(2, 4) : randInt(2, 5);
+  const a = randInt(2, levelScaledValue(level, 7, 12));
+  const n = level < 3 ? randInt(2, 3) : level < 7 ? randInt(2, 4) : randInt(2, 5);
   return {
     topic: "powers",
     q: `Berechne: ${a}^${n}`,
@@ -573,7 +665,7 @@ function genPowers(level) {
 function genRoots(level) {
   // perfect squares
   const squares = [4, 9, 16, 25, 36, 49, 64, 81, 100, 121, 144, 169, 196];
-  const idxMax = Math.min(squares.length - 1, 6 + level);
+  const idxMax = Math.min(squares.length - 1, levelScaledValue(level, 5, squares.length - 1));
   const v = squares[randInt(0, idxMax)];
   return {
     topic: "roots",
@@ -589,8 +681,8 @@ function genGeometry(level) {
   const type = randInt(0, 2);
 
   if (type === 0) {
-    const a = randInt(3, 30);
-    const b = randInt(3, 30);
+    const a = randInt(3, levelScaledValue(level, 18, 40));
+    const b = randInt(3, levelScaledValue(level, 18, 40));
     return {
       topic: "geometry",
       q: `Rechteck: a=${a} cm, b=${b} cm. Fläche A = ? (cm²)`,
@@ -601,8 +693,8 @@ function genGeometry(level) {
   }
 
   if (type === 1) {
-    const g = randInt(4, 40);
-    const h = randInt(3, 30);
+    const g = randInt(4, levelScaledValue(level, 22, 48));
+    const h = randInt(3, levelScaledValue(level, 18, 36));
     return {
       topic: "geometry",
       q: `Dreieck: g=${g} cm, h=${h} cm. Fläche A = ? (cm²)`,
@@ -612,7 +704,7 @@ function genGeometry(level) {
     };
   }
 
-  const r = randInt(2, 18);
+  const r = randInt(2, levelScaledValue(level, 10, 26));
   const U = Math.round(2 * 3.14 * r * 100) / 100;
   return {
     topic: "geometry",
@@ -625,10 +717,11 @@ function genGeometry(level) {
 
 function genEquations(level) {
   // ax + b = c with integer solution
-  const maxCoef = Math.min(8, 3 + level);
-  const a = randInt(1, maxCoef) * (Math.random() < 0.3 ? -1 : 1);
-  const x = randInt(-10, 12);
-  const b = randInt(-12, 12);
+  const maxCoef = Math.min(12, 3 + levelScaledValue(level, 3, 10));
+  const allowNegativeA = level > 3;
+  const a = randInt(1, maxCoef) * (allowNegativeA && Math.random() < 0.4 ? -1 : 1);
+  const x = randInt(-levelScaledValue(level, 8, 16), levelScaledValue(level, 10, 22));
+  const b = randInt(-levelScaledValue(level, 10, 22), levelScaledValue(level, 10, 22));
   const c = a * x + b;
   const signB = b >= 0 ? `+ ${b}` : `- ${Math.abs(b)}`;
 
@@ -653,11 +746,13 @@ function gcd(a, b) {
 }
 
 function genPercent(level) {
-  const percOptions = [10, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90];
-  const p = percOptions[randInt(0, percOptions.length - 1)];
-  const divisor = 100 / gcd(p, 100); // ensures integer result
-  const multiplier = level < 4 ? randInt(2, 10) : randInt(4, 16);
-  const G = divisor * multiplier * (level > 5 ? randInt(2, 3) : 1);
+  const percOptions = [10, 12.5, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90];
+  const maxIdx = levelScaledValue(level, 5, percOptions.length - 1);
+  const p = percOptions[randInt(0, maxIdx)];
+  const divisor = 100 / gcd(Math.round(p * 10), 1000); // ensures integer result even for 12.5
+  const multiplier = level < 4 ? randInt(2, 10) : randInt(4, levelScaledValue(level, 14, 24));
+  const extraScale = level > 6 ? randInt(2, 4) : level > 3 ? randInt(1, 3) : 1;
+  const G = divisor * multiplier * extraScale;
   const result = (G * p) / 100;
 
   return {
@@ -680,7 +775,8 @@ function genPythagoras(level) {
 
   const idx = Math.min(triples.length - 1, Math.max(0, level - 1));
   const base = triples[randInt(0, idx)];
-  const scale = level < 3 ? 1 : level < 6 ? randInt(1, 2) : randInt(1, 3);
+  const scaleMax = level < 3 ? 1 : level < 6 ? 2 : level < 9 ? 3 : 4;
+  const scale = randInt(1, scaleMax);
   const a = base.a * scale;
   const b = base.b * scale;
   const c = base.c * scale;
@@ -711,7 +807,7 @@ function pickFromCardsOrProcedural(topic) {
     };
   }
 
-  const L = state.level;
+  const L = getTopicDifficulty(topic);
   if (topic === "terms") return genTerms(L);
   if (topic === "linear") return genLinear(L);
   if (topic === "powers") return genPowers(L);
@@ -884,7 +980,8 @@ function checkAnswer() {
   const topic = current.topic;
   let ok = false;
   const now = Date.now();
-  const solveTime = questionStartedAt ? (now - questionStartedAt) / 1000 : null;
+  const solveTimeMs = questionStartedAt ? now - questionStartedAt : null;
+  const solveTime = solveTimeMs != null ? solveTimeMs / 1000 : null;
 
   if (current.answerType === "number") {
     const user = Number(normalizeNumber(answerEl.value));
@@ -902,8 +999,7 @@ function checkAnswer() {
     state.score += 10 + Math.min(10, state.level);
     if (state.streak % 5 === 0) state.level += 1;
 
-    const stats = ensureTopicStats(topic);
-    stats.correct += 1;
+    updateTopicStats({ topic, correct: true, solveTimeMs });
 
     feedbackEl.textContent = "✅ Richtig!";
     daily.doneCount += 1;
@@ -926,8 +1022,7 @@ function checkAnswer() {
     }
   } else {
     state.streak = 0;
-    const stats = ensureTopicStats(topic);
-    stats.wrong += 1;
+    updateTopicStats({ topic, correct: false, solveTimeMs });
 
     const shown = String(current.a).replace(".", ",");
     feedbackEl.textContent = `❌ Nicht ganz. Richtige Antwort: ${shown}`;
