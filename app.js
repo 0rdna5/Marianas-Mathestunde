@@ -12,6 +12,17 @@ const levelPill = el("levelPill");
 const streakPill = el("streakPill");
 const scorePill = el("scorePill");
 const questListEl = el("questList");
+const sessionEndBtn = el("sessionEndBtn");
+const recapBackdrop = el("recapBackdrop");
+const recapCard = el("recapCard");
+const recapCorrectEl = el("recapCorrect");
+const recapWrongEl = el("recapWrong");
+const recapFastestEl = el("recapFastest");
+const recapBestTopicEl = el("recapBestTopic");
+const recapWeakTopicEl = el("recapWeakTopic");
+const recapNextGoalEl = el("recapNextGoal");
+const recapContinueBtn = el("recapContinueBtn");
+const recapCloseBtn = el("recapCloseBtn");
 
 const fxLayer = el("fxLayer");
 const badgeToast = el("badgeToast");
@@ -136,7 +147,14 @@ const ALL_TOPICS = [
 
 const APP_VERSION = 1;
 const DEFAULT_STATE = { level: 1, streak: 0, score: 0, coins: 0 };
-const DEFAULT_PROFILE = { name: "Mariana", theme: DEFAULT_THEME, unlockedThemes: [DEFAULT_THEME], explainMode: false };
+const DEFAULT_PROFILE = {
+  name: "Mariana",
+  theme: DEFAULT_THEME,
+  unlockedThemes: [DEFAULT_THEME],
+  explainMode: false,
+  sessionHistory: [],
+  lastSessionRecap: null
+};
 const DIFFICULTY_MIN = 1;
 const DIFFICULTY_MAX = 10;
 const DIFFICULTY_ALPHA = 0.25; // EWMA smoothing for accuracy & time
@@ -191,7 +209,10 @@ function normalizeProfile(rawProfile) {
   if (data.theme && !unlocked.includes(data.theme)) unlocked.push(data.theme);
   const id = rawProfile?.id || `p_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
-  return { ...data, id, unlockedThemes: unlocked, explainMode: !!data.explainMode };
+  const sessionHistory = Array.isArray(data.sessionHistory) ? data.sessionHistory.slice(-10) : [];
+  const lastSessionRecap = data.lastSessionRecap || null;
+
+  return { ...data, id, unlockedThemes: unlocked, explainMode: !!data.explainMode, sessionHistory, lastSessionRecap };
 }
 
 function normalizeFullProfile(rawProfile) {
@@ -214,7 +235,9 @@ function normalizeFullProfile(rawProfile) {
     state,
     topicStats,
     daily,
-    parentSettings
+    parentSettings,
+    sessionHistory: Array.isArray(rawProfile?.sessionHistory) ? rawProfile.sessionHistory.slice(-10) : [],
+    lastSessionRecap: rawProfile?.lastSessionRecap || null
   };
 }
 
@@ -398,6 +421,7 @@ let topicStats = profile.topicStats || { ...DEFAULT_TOPIC_STATS };
 let deck = { meta: {}, cards: [] };
 let current = null;
 let questionStartedAt = null;
+let session = null;
 let wrongAttemptsForCurrentQuestion = 0;
 let shownHintLevel = 0;
 
@@ -459,6 +483,8 @@ function refreshProfileRefs(nextProfile) {
   daily = loadDaily();
   profile.daily = daily;
   profile.parentSettings = parentSettings;
+  profile.sessionHistory = Array.isArray(profile.sessionHistory) ? profile.sessionHistory.slice(-10) : [];
+  profile.lastSessionRecap = profile.lastSessionRecap || null;
 }
 
 function setActiveProfile(profileId) {
@@ -475,6 +501,7 @@ function setActiveProfile(profileId) {
   renderShop();
   renderTopicLocks();
   ensureActiveTopicAllowed();
+  startSession();
   saveAll();
   newQuestion();
 }
@@ -691,7 +718,9 @@ function persistActiveProfile() {
     state,
     topicStats,
     daily,
-    parentSettings
+    parentSettings,
+    sessionHistory: Array.isArray(profile.sessionHistory) ? profile.sessionHistory.slice(-10) : [],
+    lastSessionRecap: profile.lastSessionRecap || null
   };
   const idx = appData.profiles.findIndex((p) => p.id === enrichedProfile.id);
   if (idx >= 0) {
@@ -747,6 +776,159 @@ function computeWeakTopic(statsSource = topicStats) {
     return "linear";
   }
   return weakest;
+}
+
+function formatSeconds(ms) {
+  if (!Number.isFinite(ms)) return "-";
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function computeSessionBestTopic() {
+  if (!session) return null;
+  const allowed = new Set(enabledTopics());
+  let best = null;
+  let bestAcc = -1;
+
+  Object.entries(session.perTopic || {}).forEach(([topic, data]) => {
+    if (!allowed.has(topic) || !data?.attempts) return;
+    const acc = data.correct / data.attempts;
+    if (acc > bestAcc) {
+      bestAcc = acc;
+      best = { topic, accuracy: acc, attempts: data.attempts };
+    }
+  });
+
+  return best;
+}
+
+function computeSessionWeakTopic() {
+  if (!session) return null;
+  const allowed = new Set(enabledTopics());
+  let weak = null;
+  let weakAcc = Infinity;
+  let fallbackWeak = null;
+  let fallbackAcc = Infinity;
+
+  Object.entries(session.perTopic || {}).forEach(([topic, data]) => {
+    if (!allowed.has(topic) || !data?.attempts) return;
+    const acc = data.correct / data.attempts;
+    if (data.attempts >= 3 && acc < weakAcc) {
+      weak = { topic, accuracy: acc, attempts: data.attempts };
+      weakAcc = acc;
+    }
+    if (acc < fallbackAcc) {
+      fallbackWeak = { topic, accuracy: acc, attempts: data.attempts };
+      fallbackAcc = acc;
+    }
+  });
+
+  if (weak) return weak;
+  if (fallbackWeak) return fallbackWeak;
+
+  const topic = session.lastQuestionTopic && allowed.has(session.lastQuestionTopic)
+    ? session.lastQuestionTopic
+    : computeWeakTopic();
+  return topic ? { topic, accuracy: null, attempts: 0 } : null;
+}
+
+function nextGoalSuggestion(weakTopic) {
+  const allowed = new Set(enabledTopics());
+  const topic = weakTopic && allowed.has(weakTopic) ? weakTopic : computeWeakTopic();
+
+  if (daily && daily.doneCount < DAILY_TARGET) {
+    const remaining = Math.max(0, DAILY_TARGET - (daily.doneCount || 0));
+    const focusTopic = topicLabel(daily?.quests?.C?.weakTopic || topic);
+    return `Heute fehlen noch ${remaining} Aufgaben. Fokus: ${focusTopic || "dein Lieblingsthema"}.`;
+  }
+
+  if (topic) {
+    return `Übe ${topicLabel(topic)} als nächstes: 5 richtige Aufgaben.`;
+  }
+
+  return "Weiter so! Morgen knacken wir dein Wunschthema.";
+}
+
+function buildSessionRecap() {
+  if (!session) return null;
+  const best = computeSessionBestTopic();
+  const weak = computeSessionWeakTopic();
+  const nextGoal = nextGoalSuggestion(weak?.topic || session.lastQuestionTopic);
+
+  const recap = {
+    startedAt: session.startedAt,
+    endedAt: Date.now(),
+    correct: session.correctCount,
+    wrong: session.wrongCount,
+    fastestCorrect: session.fastestCorrect,
+    bestTopic: best,
+    weakTopic: weak,
+    solveTimesMsCorrect: {
+      minTimeMs: session.solveTimesMsCorrect?.minTimeMs ?? null,
+      avgTimeMs: session.solveTimesMsCorrect?.avgTimeMs ?? null
+    },
+    nextGoal,
+    lastQuestionTopic: session.lastQuestionTopic
+  };
+
+  profile.lastSessionRecap = recap;
+  const history = Array.isArray(profile.sessionHistory) ? [...profile.sessionHistory, recap] : [recap];
+  profile.sessionHistory = history.slice(-10);
+  return recap;
+}
+
+function renderRecap(recap) {
+  if (!recap || !recapBackdrop) return;
+  recapCorrectEl.textContent = recap.correct ?? 0;
+  recapWrongEl.textContent = recap.wrong ?? 0;
+
+  const fastest = recap.fastestCorrect?.timeMs ?? recap.solveTimesMsCorrect?.minTimeMs;
+  recapFastestEl.textContent = formatSeconds(fastest);
+
+  const best = recap.bestTopic;
+  const weak = recap.weakTopic;
+  recapBestTopicEl.textContent = best
+    ? `${topicLabel(best.topic)} · ${(best.accuracy * 100).toFixed(0)}%`
+    : "-";
+  recapWeakTopicEl.textContent = weak
+    ? `${topicLabel(weak.topic)} · ${weak.accuracy == null ? "noch üben" : `${Math.round(weak.accuracy * 100)}%`}`
+    : "-";
+
+  recapNextGoalEl.textContent = recap.nextGoal || "Weiter so!";
+}
+
+function showRecap(recap) {
+  renderRecap(recap || profile.lastSessionRecap);
+  if (recapBackdrop) {
+    recapBackdrop.hidden = false;
+    recapBackdrop.classList.add("open");
+  }
+}
+
+function hideRecap() {
+  if (recapBackdrop) {
+    recapBackdrop.hidden = true;
+    recapBackdrop.classList.remove("open");
+  }
+}
+
+function endSession(reason = "manual") {
+  if (!session || session.ended) return;
+  session.ended = true;
+  const recap = buildSessionRecap();
+  saveAll();
+  renderStats();
+  if (reason === "daily") {
+    setCompanionMessage("Mission erfüllt! Zeit für ein Recap.");
+  }
+  showRecap(recap);
+}
+
+function startNewSession({ freshQuestion = false } = {}) {
+  startSession();
+  hideRecap();
+  if (freshQuestion) {
+    newQuestion();
+  }
 }
 
 function defaultDaily(dateKey = todayKey(), statsSource = topicStats) {
@@ -1289,12 +1471,79 @@ function showNextHintManual() {
   }
 }
 
+function startSession() {
+  session = {
+    startedAt: Date.now(),
+    questionsAnswered: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    solveTimesMsCorrect: {
+      minTimeMs: null,
+      avgTimeMs: null,
+      totalMs: 0,
+      count: 0
+    },
+    fastestCorrect: null,
+    perTopic: {},
+    lastQuestionTopic: null,
+    ended: false
+  };
+}
+
+function ensureSessionActive() {
+  if (!session || session.ended) {
+    startSession();
+  }
+}
+
+function ensureSessionTopic(topic) {
+  if (!session.perTopic[topic]) {
+    session.perTopic[topic] = { attempts: 0, correct: 0, wrong: 0 };
+  }
+  return session.perTopic[topic];
+}
+
+function updateSessionOnNewQuestion(topic) {
+  ensureSessionActive();
+  session.lastQuestionTopic = topic;
+}
+
+function updateSessionOnAnswer({ correct, solveTimeMs, topic, promptText }) {
+  if (!session || session.ended) return;
+
+  session.questionsAnswered += 1;
+  const topicEntry = ensureSessionTopic(topic);
+  topicEntry.attempts += 1;
+  if (correct) {
+    session.correctCount += 1;
+    topicEntry.correct += 1;
+  } else {
+    session.wrongCount += 1;
+    topicEntry.wrong += 1;
+  }
+
+  if (correct && Number.isFinite(solveTimeMs)) {
+    const t = session.solveTimesMsCorrect;
+    t.count += 1;
+    t.totalMs += solveTimeMs;
+    t.avgTimeMs = t.totalMs / t.count;
+    t.minTimeMs = t.minTimeMs == null ? solveTimeMs : Math.min(t.minTimeMs, solveTimeMs);
+
+    if (!session.fastestCorrect || solveTimeMs < session.fastestCorrect.timeMs) {
+      session.fastestCorrect = { timeMs: solveTimeMs, promptText, topic };
+    }
+  }
+}
+
 function newQuestion() {
+  if (recapBackdrop && !recapBackdrop.hidden) return;
   ensureActiveTopicAllowed();
   const topic = weightedPickTopic();
   current = pickFromCardsOrProcedural(topic);
 
   current.preparedHints = collectHintsForQuestion(current);
+
+  updateSessionOnNewQuestion(topic);
 
   questionEl.textContent = current.q;
   resetHintProgress();
@@ -1447,6 +1696,8 @@ function updateQuestsOnAnswer({ correct, solveTime, topic }) {
 
 function checkAnswer() {
   if (!current) return;
+  if (recapBackdrop && !recapBackdrop.hidden) return;
+  ensureSessionActive();
 
   const topic = current.topic;
   let ok = false;
@@ -1464,6 +1715,7 @@ function checkAnswer() {
   }
 
   daily = loadDaily();
+  updateSessionOnAnswer({ correct: ok, solveTimeMs, topic, promptText: current.q });
 
   if (ok) {
     state.streak += 1;
@@ -1490,6 +1742,7 @@ function checkAnswer() {
     if (daily.solved === DAILY_TARGET) {
       showBadge({ icon:"🏆", title:"Tagesziel 15/15!", sub:"Mission complete." });
       burstConfetti(40);
+      endSession("daily");
     }
 
     resetHintProgress();
@@ -1527,6 +1780,7 @@ function resetProgress() {
   renderStats();
   renderDaily();
   renderDailyQuests();
+  startSession();
   newQuestion();
 }
 
@@ -1607,6 +1861,24 @@ if (parentModeToggle) {
   });
 }
 
+if (sessionEndBtn) {
+  sessionEndBtn.addEventListener("click", () => endSession("manual"));
+}
+
+if (recapContinueBtn) {
+  recapContinueBtn.addEventListener("click", () => startNewSession({ freshQuestion: true }));
+}
+
+if (recapCloseBtn) {
+  recapCloseBtn.addEventListener("click", () => startNewSession());
+}
+
+if (recapBackdrop) {
+  recapBackdrop.addEventListener("click", (e) => {
+    if (e.target === recapBackdrop) startNewSession();
+  });
+}
+
 // Controls
 checkBtn.addEventListener("click", checkAnswer);
 newBtn.addEventListener("click", newQuestion);
@@ -1625,6 +1897,7 @@ closeModal();
   renderDaily();
   renderDailyQuests();
   setCompanionMessage("Heute 15 richtige – und ich bin bei jeder Aufgabe dabei.");
+  startSession();
   await loadDeck();
   newQuestion();
 })();
