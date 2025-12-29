@@ -60,15 +60,20 @@ const resetBtn = el("resetBtn");
 const avatarEl = el("avatar");
 const subtitleEl = el("subtitle");
 
+const hintBoxEl = el("hintBox");
+const hintTitleEl = el("hintTitle");
+
 const profileBtn = el("profileBtn");
 const modalBackdrop = el("modalBackdrop");
 const closeModalBtn = el("closeModalBtn");
 const playerNameInput = el("playerName");
 const themeSelect = el("theme");
+const explainModeToggle = el("explainMode");
 const saveProfileBtn = el("saveProfileBtn");
 const shopList = el("shopList");
 const shopMessage = el("shopMessage");
 const shopCoins = el("shopCoins");
+const nextHintBtn = el("nextHintBtn");
 
 const dailyText = el("dailyText");
 const dailyDone = el("dailyDone");
@@ -106,7 +111,7 @@ function saveJSON(key, value) { localStorage.setItem(key, JSON.stringify(value))
 
 // ---------------- State / Profile ----------------
 const DEFAULT_STATE = { level: 1, streak: 0, score: 0, coins: 0 };
-const DEFAULT_PROFILE = { name: "Mariana", theme: DEFAULT_THEME, unlockedThemes: [DEFAULT_THEME] };
+const DEFAULT_PROFILE = { name: "Mariana", theme: DEFAULT_THEME, unlockedThemes: [DEFAULT_THEME], explainMode: false };
 const DIFFICULTY_MIN = 1;
 const DIFFICULTY_MAX = 10;
 const DIFFICULTY_ALPHA = 0.25; // EWMA smoothing for accuracy & time
@@ -119,7 +124,7 @@ function normalizeProfile(rawProfile) {
   if (!unlocked.includes(DEFAULT_THEME)) unlocked.push(DEFAULT_THEME);
   if (data.theme && !unlocked.includes(data.theme)) unlocked.push(data.theme);
 
-  return { ...data, unlockedThemes: unlocked };
+  return { ...data, unlockedThemes: unlocked, explainMode: !!data.explainMode };
 }
 
 let state = { ...DEFAULT_STATE, ...loadJSON(STATE_KEY, DEFAULT_STATE) };
@@ -137,6 +142,49 @@ const ALL_TOPICS = [
   "geometry",
   "pythagoras"
 ];
+
+const DEFAULT_TOPIC_HINTS = {
+  equations: [
+    "Bringe zuerst die Zahl ohne x auf die andere Seite.",
+    "Halte die Gleichung im Gleichgewicht und teile am Ende durch die Zahl vor dem x.",
+    "Stelle Schritt für Schritt nach x um: erst minus/plus, dann teilen."
+  ],
+  percent: [
+    "Überlege: Wie viel sind 10%?",
+    "Schreibe p/100 und multipliziere mit dem Grundwert.",
+    "Rechne G · p ÷ 100 und achte auf Einheiten." 
+  ],
+  pythagoras: [
+    "Quadrate die Katheten a und b.",
+    "Addiere die Quadrate.",
+    "Ziehe die Wurzel aus der Summe, das ist die Hypotenuse."
+  ],
+  linear: [
+    "Setze x ein und berechne den Term.",
+    "Multipliziere zuerst, danach addieren/subtrahieren.",
+    "Ordne sauber nach Reihenfolge: erst Klammern/Punkt, dann Strich."
+  ],
+  terms: [
+    "Fasse gleiche Terme zusammen.",
+    "Rechne Punkt-vor-Strich und löse Klammern vorsichtig.",
+    "Sortiere nach Variablen und Zahlen, dann vereinfachen."
+  ],
+  powers: [
+    "Eine Potenz ist wiederholte Multiplikation.",
+    "Rechne Basis mal Basis, so oft wie der Exponent sagt.",
+    "Kontrolliere das Ergebnis mit kleiner Probe (z.B. 2^3 = 8)."
+  ],
+  roots: [
+    "Welche Zahl mal sich selbst ergibt den Wert?",
+    "Denke an Quadratzahlen: 4, 9, 16, 25 …",
+    "Probiere nahe Quadratzahlen oder rechne mit √ Taste (hier Kopfrechnen!)."
+  ],
+  geometry: [
+    "Notiere die passende Formel (z.B. A = a · b).",
+    "Setze die gegebenen Werte ein und rechne Schritt für Schritt.",
+    "Kontrolliere Einheit und rechne auf zwei Stellen, falls nötig."
+  ]
+};
 
 function defaultTopicStat() {
   return {
@@ -180,6 +228,8 @@ let topicStats = normalizeTopicStats(loadJSON(STATS_KEY, DEFAULT_TOPIC_STATS));
 let deck = { meta: {}, cards: [] };
 let current = null;
 let questionStartedAt = null;
+let wrongAttemptsForCurrentQuestion = 0;
+let shownHintLevel = 0;
 
 function themeName(id) {
   return THEMES.find((t) => t.id === id)?.name || id;
@@ -212,6 +262,7 @@ function applyProfile() {
   subtitleEl.textContent = `Für ${name} • AHS Unterstufe`;
   document.documentElement.setAttribute("data-theme", profile.theme || DEFAULT_THEME);
   playerNameInput.value = name;
+  if (explainModeToggle) explainModeToggle.checked = !!profile.explainMode;
   renderThemeOptions();
 }
 
@@ -802,6 +853,7 @@ function pickFromCardsOrProcedural(topic) {
       topic: c.topic,
       q: c.prompt,
       hint: c.hint || "",
+      hints: Array.isArray(c.hints) ? c.hints : undefined,
       answerType: c.answerType || "number",
       a: c.answer
     };
@@ -829,16 +881,93 @@ function normalizeTextAnswer(s) {
     .replace(/−/g, "-");
 }
 
+function collectHintsForQuestion(q) {
+  const base = Array.isArray(q.hints) ? q.hints.filter(Boolean) : [];
+  const collected = base.length ? [...base] : (q.hint ? [q.hint] : []);
+  const fallback = DEFAULT_TOPIC_HINTS[q.topic] || [];
+  const merged = [0, 1, 2].map((i) => collected[i] || fallback[i]).filter(Boolean);
+  return merged;
+}
+
+function resetHintProgress() {
+  wrongAttemptsForCurrentQuestion = 0;
+  shownHintLevel = 0;
+  renderHint();
+}
+
+function renderHint() {
+  if (!hintEl || !current) return;
+  const hints = current.preparedHints || [];
+  const hasHint = shownHintLevel > 0 && hints[shownHintLevel - 1];
+
+  if (!hasHint) {
+    hintEl.textContent = "";
+    if (hintBoxEl) hintBoxEl.hidden = true;
+    if (nextHintBtn) nextHintBtn.disabled = false;
+    return;
+  }
+
+  hintEl.textContent = hints[shownHintLevel - 1];
+  if (hintBoxEl) hintBoxEl.hidden = false;
+  if (hintTitleEl) hintTitleEl.textContent = `Tipp ${shownHintLevel}`;
+  if (nextHintBtn) {
+    const noMore = shownHintLevel >= hints.length;
+    nextHintBtn.disabled = noMore;
+    nextHintBtn.textContent = noMore ? "Alle Tipps gezeigt" : "Noch ein Tipp";
+  }
+}
+
+function revealHint(level) {
+  if (!current) return;
+  const hints = current.preparedHints || [];
+  shownHintLevel = Math.max(0, Math.min(level, hints.length));
+  renderHint();
+}
+
+function autoRevealHint() {
+  if (!current) return;
+  const hints = current.preparedHints || [];
+  if (!hints.length) return;
+
+  const desiredLevel = profile.explainMode
+    ? Math.min(hints.length, Math.max(3, wrongAttemptsForCurrentQuestion))
+    : Math.min(hints.length, wrongAttemptsForCurrentQuestion);
+
+  if (desiredLevel > shownHintLevel) {
+    revealHint(desiredLevel);
+  }
+}
+
+function showNextHintManual() {
+  if (!current) return;
+  const hints = current.preparedHints || [];
+  if (!hints.length) return;
+
+  const nextLevel = Math.min(hints.length, shownHintLevel + 1);
+  if (nextLevel > shownHintLevel) {
+    revealHint(nextLevel);
+  }
+}
+
 function newQuestion() {
   const topic = weightedPickTopic();
   current = pickFromCardsOrProcedural(topic);
 
+  current.preparedHints = collectHintsForQuestion(current);
+
   questionEl.textContent = current.q;
-  hintEl.textContent = current.hint || "";
+  resetHintProgress();
   feedbackEl.textContent = "";
   answerEl.value = "";
   answerEl.focus();
   questionStartedAt = Date.now();
+
+  if (nextHintBtn) {
+    const hasHints = (current.preparedHints || []).length > 0;
+    nextHintBtn.hidden = !hasHints;
+    nextHintBtn.textContent = "Noch ein Tipp";
+    nextHintBtn.disabled = false;
+  }
 }
 
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
@@ -1020,17 +1149,21 @@ function checkAnswer() {
       showBadge({ icon:"🏆", title:"Tagesziel 15/15!", sub:"Mission complete." });
       burstConfetti(40);
     }
+
+    resetHintProgress();
   } else {
     state.streak = 0;
     updateTopicStats({ topic, correct: false, solveTimeMs });
 
-    const shown = String(current.a).replace(".", ",");
-    feedbackEl.textContent = `❌ Nicht ganz. Richtige Antwort: ${shown}`;
+    wrongAttemptsForCurrentQuestion += 1;
+    feedbackEl.textContent = "❌ Noch einmal versuchen – der Tipp hilft dir weiter.";
     renderDaily();
     setCompanionMessage(pick(MSG.wrong));
 
     updateQuestsOnAnswer({ correct: false, solveTime, topic });
     renderDailyQuests();
+
+    autoRevealHint();
 
 
   }
@@ -1075,7 +1208,8 @@ saveProfileBtn.addEventListener("click", (e) => {
   profile = {
     name: (playerNameInput.value || "Mariana").trim().slice(0, 20),
     theme: chosenTheme,
-    unlockedThemes: profile.unlockedThemes || [DEFAULT_THEME]
+    unlockedThemes: profile.unlockedThemes || [DEFAULT_THEME],
+    explainMode: !!explainModeToggle?.checked
   };
   saveAll();
   applyProfile();
@@ -1089,6 +1223,7 @@ skipBtn.addEventListener("click", newQuestion);
 resetBtn.addEventListener("click", resetProgress);
 answerEl.addEventListener("keydown", (e) => { if (e.key === "Enter") checkAnswer(); });
 topicEl.addEventListener("change", newQuestion);
+if (nextHintBtn) nextHintBtn.addEventListener("click", showNextHintManual);
 
 // Init
 closeModal();
