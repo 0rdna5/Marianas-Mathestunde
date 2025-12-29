@@ -88,7 +88,10 @@
           </select>
         </div>
 
-        <button id="profileBtn" class="ghost small">Profil</button>
+        <div class="toolbarActions">
+          <button id="sessionEndBtn" class="ghost tiny">Session beenden</button>
+          <button id="profileBtn" class="ghost small">Profil</button>
+        </div>
       </div>
 
       <div class="qbox">
@@ -236,6 +239,45 @@
       <div class="badgeTitle" id="badgeTitle">Achievement!</div>
       <div class="badgeSub" id="badgeSub">Nice!</div>
     </div>
+  </div>
+</div>
+
+<div class="modalBackdrop recapBackdrop" id="recapBackdrop" hidden>
+  <div class="recapCard" id="recapCard">
+    <div class="recapHead">
+      <div class="recapLabel">Session-Zusammenfassung</div>
+      <h2>Super gemacht!</h2>
+    </div>
+    <div class="recapGrid">
+      <div class="recapStat">
+        <div class="recapStatLabel">✅ Richtig</div>
+        <div class="recapStatValue" id="recapCorrect">0</div>
+      </div>
+      <div class="recapStat">
+        <div class="recapStatLabel">❌ Falsch</div>
+        <div class="recapStatValue" id="recapWrong">0</div>
+      </div>
+      <div class="recapStat">
+        <div class="recapStatLabel">⏱ Schnellste richtige</div>
+        <div class="recapStatValue" id="recapFastest">-</div>
+      </div>
+      <div class="recapStat">
+        <div class="recapStatLabel">Bestes Topic</div>
+        <div class="recapStatValue" id="recapBestTopic">-</div>
+      </div>
+      <div class="recapStat">
+        <div class="recapStatLabel">Schwächstes Topic</div>
+        <div class="recapStatValue" id="recapWeakTopic">-</div>
+      </div>
+    </div>
+    <div class="recapGoal">
+      <div class="recapGoalTitle">Nächstes Ziel</div>
+      <div class="recapGoalText" id="recapNextGoal">Weiter so! Morgen knacken wir dein Wunschthema.</div>
+    </div>
+  <div class="recapActions">
+    <button type="button" id="recapContinueBtn">Weiter spielen</button>
+    <button type="button" class="ghost" id="recapCloseBtn">Schließen</button>
+  </div>
   </div>
 </div>
 
