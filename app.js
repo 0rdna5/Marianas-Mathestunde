@@ -548,8 +548,8 @@ function resetProgress() {
 
 // ---------------- Modal / Profile ----------------
 closeModal();
-function openModal()  { modalBackdrop.classList.add("open"); }
-function closeModal() { modalBackdrop.classList.remove("open"); }
+function openModal()  { modalBackdrop.hidden = false; modalBackdrop.classList.add("open"); }
+function closeModal() { modalBackdrop.hidden = true; modalBackdrop.classList.remove("open"); }
 
 profileBtn.addEventListener("click", openModal);
 closeModalBtn.addEventListener("click", (e) => {
