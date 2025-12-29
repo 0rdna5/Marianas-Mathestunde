@@ -70,6 +70,18 @@ const playerNameInput = el("playerName");
 const themeSelect = el("theme");
 const explainModeToggle = el("explainMode");
 const saveProfileBtn = el("saveProfileBtn");
+const profileSelect = el("profileSelect");
+const newProfileBtn = el("newProfileBtn");
+const deleteProfileBtn = el("deleteProfileBtn");
+const parentModeToggle = el("parentModeToggle");
+const topicCheckboxesEl = el("topicCheckboxes");
+const numberRangeMinInput = el("numberRangeMin");
+const numberRangeMaxInput = el("numberRangeMax");
+const allowNegativeToggle = el("allowNegative");
+const allowCarryBorrowToggle = el("allowCarryBorrow");
+const timeGoalInput = el("timeGoalSeconds");
+const minLevelInput = el("minLevel");
+const maxLevelInput = el("maxLevel");
 const shopList = el("shopList");
 const shopMessage = el("shopMessage");
 const shopCoins = el("shopCoins");
@@ -80,11 +92,12 @@ const dailyDone = el("dailyDone");
 const barFill = el("barFill");
 
 
-const STATE_KEY = "mmm_state_v3";
-const PROFILE_KEY = "mmm_profile_v1";
-const STATS_KEY = "mmm_topic_stats_v1"; // adaptive repetition & difficulty
+const APP_STORAGE_KEY = "mmm_profiles_v1";
+const STATE_KEY = "mmm_state_v3"; // legacy
+const PROFILE_KEY = "mmm_profile_v1"; // legacy
+const STATS_KEY = "mmm_topic_stats_v1"; // legacy adaptive repetition & difficulty
 const CARDS_KEY = "mmm_cards_cache_v1";
-const DAILY_KEY = "mmm_daily_v1";
+const DAILY_KEY = "mmm_daily_v1"; // legacy
 const DAILY_TARGET = 15;
 const DEFAULT_THEME = "cottoncandy";
 const THEMES = [
@@ -110,28 +123,6 @@ function loadJSON(key, fallback) {
 function saveJSON(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
 
 // ---------------- State / Profile ----------------
-const DEFAULT_STATE = { level: 1, streak: 0, score: 0, coins: 0 };
-const DEFAULT_PROFILE = { name: "Mariana", theme: DEFAULT_THEME, unlockedThemes: [DEFAULT_THEME], explainMode: false };
-const DIFFICULTY_MIN = 1;
-const DIFFICULTY_MAX = 10;
-const DIFFICULTY_ALPHA = 0.25; // EWMA smoothing for accuracy & time
-const TARGET_SOLVE_TIME_MS = 12000; // kindgerechtes Zieltempo
-const DEBUG_DIFFICULTY = false;
-
-function normalizeProfile(rawProfile) {
-  const data = { ...DEFAULT_PROFILE, ...(rawProfile || {}) };
-  const unlocked = Array.isArray(data.unlockedThemes) ? [...new Set(data.unlockedThemes)] : [];
-  if (!unlocked.includes(DEFAULT_THEME)) unlocked.push(DEFAULT_THEME);
-  if (data.theme && !unlocked.includes(data.theme)) unlocked.push(data.theme);
-
-  return { ...data, unlockedThemes: unlocked, explainMode: !!data.explainMode };
-}
-
-let state = { ...DEFAULT_STATE, ...loadJSON(STATE_KEY, DEFAULT_STATE) };
-if (!Number.isFinite(state.coins)) state.coins = 0;
-let profile = normalizeProfile(loadJSON(PROFILE_KEY, DEFAULT_PROFILE));
-
-// topic stats: { topic: { attempts, correct, wrong, recentAccuracy, avgSolveTime, difficultyLevel } }
 const ALL_TOPICS = [
   "terms",
   "equations",
@@ -143,6 +134,185 @@ const ALL_TOPICS = [
   "pythagoras"
 ];
 
+const APP_VERSION = 1;
+const DEFAULT_STATE = { level: 1, streak: 0, score: 0, coins: 0 };
+const DEFAULT_PROFILE = { name: "Mariana", theme: DEFAULT_THEME, unlockedThemes: [DEFAULT_THEME], explainMode: false };
+const DIFFICULTY_MIN = 1;
+const DIFFICULTY_MAX = 10;
+const DIFFICULTY_ALPHA = 0.25; // EWMA smoothing for accuracy & time
+const TARGET_SOLVE_TIME_MS = 12000; // kindgerechtes Zieltempo
+const DEBUG_DIFFICULTY = false;
+
+function defaultParentSettings() {
+  return {
+    enabled: false,
+    enabledTopics: [...ALL_TOPICS],
+    numberRange: { min: 0, max: 20 },
+    allowNegative: false,
+    allowCarryBorrow: true,
+    timeGoalSeconds: 10,
+    difficultyClamp: { minLevel: 1, maxLevel: 10 }
+  };
+}
+
+function normalizeParentSettings(raw) {
+  const defaults = defaultParentSettings();
+  const data = { ...defaults, ...(raw || {}) };
+  const enabledTopics = Array.isArray(data.enabledTopics) && data.enabledTopics.length
+    ? data.enabledTopics.filter((t) => ALL_TOPICS.includes(t))
+    : [...ALL_TOPICS];
+  const nr = data.numberRange || {};
+  const nrMinRaw = Number.isFinite(nr.min) ? nr.min : defaults.numberRange.min;
+  const nrMaxRaw = Number.isFinite(nr.max) ? nr.max : defaults.numberRange.max;
+  const nrMin = Math.min(nrMinRaw, nrMaxRaw);
+  const nrMax = Math.max(nrMinRaw, nrMaxRaw);
+  const allowNegative = !!data.allowNegative;
+  const minLevel = Number.isFinite(data.difficultyClamp?.minLevel) ? data.difficultyClamp.minLevel : defaults.difficultyClamp.minLevel;
+  const maxLevel = Number.isFinite(data.difficultyClamp?.maxLevel) ? data.difficultyClamp.maxLevel : defaults.difficultyClamp.maxLevel;
+
+  return {
+    enabled: !!data.enabled,
+    enabledTopics,
+    numberRange: { min: nrMin, max: nrMax },
+    allowNegative,
+    allowCarryBorrow: data.allowCarryBorrow !== false,
+    timeGoalSeconds: Number.isFinite(data.timeGoalSeconds) ? data.timeGoalSeconds : defaults.timeGoalSeconds,
+    difficultyClamp: {
+      minLevel: clamp(minLevel, DIFFICULTY_MIN, DIFFICULTY_MAX),
+      maxLevel: clamp(maxLevel, DIFFICULTY_MIN, DIFFICULTY_MAX)
+    }
+  };
+}
+
+function normalizeProfile(rawProfile) {
+  const data = { ...DEFAULT_PROFILE, ...(rawProfile || {}) };
+  const unlocked = Array.isArray(data.unlockedThemes) ? [...new Set(data.unlockedThemes)] : [];
+  if (!unlocked.includes(DEFAULT_THEME)) unlocked.push(DEFAULT_THEME);
+  if (data.theme && !unlocked.includes(data.theme)) unlocked.push(data.theme);
+  const id = rawProfile?.id || `p_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+  return { ...data, id, unlockedThemes: unlocked, explainMode: !!data.explainMode };
+}
+
+function normalizeFullProfile(rawProfile) {
+  const meta = normalizeProfile(rawProfile || {});
+  const state = {
+    ...DEFAULT_STATE,
+    ...(rawProfile?.state || {}),
+    ...(Number.isFinite(rawProfile?.level) ? { level: rawProfile.level } : {}),
+    ...(Number.isFinite(rawProfile?.streak) ? { streak: rawProfile.streak } : {}),
+    ...(Number.isFinite(rawProfile?.score) ? { score: rawProfile.score } : {}),
+    ...(Number.isFinite(rawProfile?.coins) ? { coins: rawProfile.coins } : {})
+  };
+  if (!Number.isFinite(state.coins)) state.coins = 0;
+  const topicStats = normalizeTopicStats(rawProfile?.topicStats || rawProfile?.stats || {});
+  const parentSettings = normalizeParentSettings(rawProfile?.parentSettings);
+  const daily = normalizeDaily(rawProfile?.daily, topicStats);
+
+  return {
+    ...meta,
+    state,
+    topicStats,
+    daily,
+    parentSettings
+  };
+}
+
+function loadLegacyProfiles() {
+  const legacyState = loadJSON(STATE_KEY, null);
+  const legacyProfile = loadJSON(PROFILE_KEY, null);
+  const legacyStats = loadJSON(STATS_KEY, null);
+  const legacyDaily = loadJSON(DAILY_KEY, null);
+  const hasLegacy = legacyState || legacyProfile || legacyStats || legacyDaily;
+  if (!hasLegacy) return null;
+
+  const merged = {
+    ...(legacyProfile || {}),
+    state: { ...DEFAULT_STATE, ...(legacyState || {}) },
+    topicStats: normalizeTopicStats(legacyStats || {}),
+    daily: legacyDaily || undefined
+  };
+  const p = normalizeFullProfile(merged);
+  return { profiles: [p], activeProfileId: p.id, appVersion: APP_VERSION };
+}
+
+function loadAppData() {
+  const stored = loadJSON(APP_STORAGE_KEY, null);
+  if (stored?.profiles?.length) {
+    const profiles = stored.profiles.map((p) => normalizeFullProfile(p));
+    let activeProfileId = stored.activeProfileId;
+    if (!profiles.some((p) => p.id === activeProfileId)) activeProfileId = profiles[0].id;
+    return { profiles, activeProfileId, appVersion: stored.appVersion || APP_VERSION };
+  }
+
+  const legacy = loadLegacyProfiles();
+  if (legacy) {
+    saveJSON(APP_STORAGE_KEY, legacy);
+    return legacy;
+  }
+
+  const fresh = normalizeFullProfile(DEFAULT_PROFILE);
+  return { profiles: [fresh], activeProfileId: fresh.id, appVersion: APP_VERSION };
+}
+
+let appData = loadAppData();
+let profile = appData.profiles.find((p) => p.id === appData.activeProfileId) || appData.profiles[0];
+let state = profile.state;
+let topicStats = profile.topicStats;
+let parentSettings = profile.parentSettings;
+let daily = profile.daily;
+
+function parentConfig() {
+  const normalized = normalizeParentSettings(parentSettings);
+  if (!normalized.enabled) {
+    return {
+      ...defaultParentSettings(),
+      enabled: false,
+      allowNegative: true,
+      numberRange: { min: -100, max: 100 },
+      difficultyClamp: { minLevel: DIFFICULTY_MIN, maxLevel: DIFFICULTY_MAX },
+      enabledTopics: [...ALL_TOPICS]
+    };
+  }
+  return normalized;
+}
+
+function enabledTopics() {
+  const cfg = parentConfig();
+  const topics = cfg.enabled ? cfg.enabledTopics : ALL_TOPICS;
+  return topics.length ? topics : [...ALL_TOPICS];
+}
+
+function clampDifficultyLevel(level) {
+  const cfg = parentConfig();
+  const minL = cfg.enabled ? cfg.difficultyClamp.minLevel : DIFFICULTY_MIN;
+  const maxL = cfg.enabled ? cfg.difficultyClamp.maxLevel : DIFFICULTY_MAX;
+  return clamp(level, minL, maxL);
+}
+
+function constrainedRange(min, max, { allowNegative } = {}) {
+  const cfg = parentConfig();
+  const nr = cfg.numberRange || {};
+  const allowNeg = allowNegative ?? cfg.allowNegative;
+  let low = min;
+  let high = max;
+  low = Math.max(low, allowNeg ? nr.min : Math.max(0, nr.min));
+  high = Math.min(high, nr.max);
+  if (high < low) {
+    const fallbackLow = allowNeg ? Math.min(nr.min, nr.max) : Math.max(0, Math.min(nr.min, nr.max));
+    const fallbackHigh = Math.max(nr.min, nr.max);
+    low = fallbackLow;
+    high = Math.max(fallbackLow, fallbackHigh);
+  }
+  return { min: low, max: high };
+}
+
+function constrainedRandInt(min, max, opts = {}) {
+  const range = constrainedRange(min, max, opts);
+  return randInt(range.min, range.max);
+}
+
+// topic stats: { topic: { attempts, correct, wrong, recentAccuracy, avgSolveTime, difficultyLevel } }
 const DEFAULT_TOPIC_HINTS = {
   equations: [
     "Bringe zuerst die Zahl ohne x auf die andere Seite.",
@@ -222,7 +392,7 @@ function normalizeTopicStats(raw) {
 }
 
 const DEFAULT_TOPIC_STATS = normalizeTopicStats({});
-let topicStats = normalizeTopicStats(loadJSON(STATS_KEY, DEFAULT_TOPIC_STATS));
+let topicStats = profile.topicStats || { ...DEFAULT_TOPIC_STATS };
 
 // loaded card deck
 let deck = { meta: {}, cards: [] };
@@ -256,6 +426,147 @@ function renderThemeOptions() {
   themeSelect.value = active;
 }
 
+function renderTopicLocks() {
+  if (!topicEl) return;
+  const allowed = new Set(enabledTopics());
+  Array.from(topicEl.options).forEach((opt) => {
+    if (opt.value === "mix") {
+      opt.disabled = allowed.size === 0;
+      return;
+    }
+    const baseText = opt.textContent.replace(/^🔒\s*/, "");
+    const isAllowed = allowed.has(opt.value);
+    opt.disabled = !isAllowed;
+    opt.textContent = `${isAllowed ? "" : "🔒 "}${baseText}`;
+  });
+}
+
+function ensureActiveTopicAllowed() {
+  if (!topicEl) return;
+  if (topicEl.value === "mix") return;
+  if (!enabledTopics().includes(topicEl.value)) {
+    const fallback = enabledTopics()[0] || "mix";
+    topicEl.value = fallback;
+    feedbackEl.textContent = "Dieses Thema ist von den Eltern gesperrt. Mix nutzt nur erlaubte Themen.";
+  }
+}
+
+function refreshProfileRefs(nextProfile) {
+  profile = nextProfile;
+  state = profile.state;
+  topicStats = profile.topicStats;
+  parentSettings = profile.parentSettings;
+  daily = loadDaily();
+  profile.daily = daily;
+  profile.parentSettings = parentSettings;
+}
+
+function setActiveProfile(profileId) {
+  const next = appData.profiles.find((p) => p.id === profileId);
+  if (!next) return;
+  persistActiveProfile();
+  refreshProfileRefs(next);
+  appData.activeProfileId = next.id;
+  saveJSON(APP_STORAGE_KEY, appData);
+  applyProfile();
+  renderStats();
+  renderDaily();
+  renderDailyQuests();
+  renderShop();
+  renderTopicLocks();
+  ensureActiveTopicAllowed();
+  saveAll();
+  newQuestion();
+}
+
+function createProfile(name) {
+  const base = normalizeFullProfile({ ...DEFAULT_PROFILE, name: (name || "Neues Profil").trim() || "Gast" });
+  appData.profiles.push(base);
+  setActiveProfile(base.id);
+  renderProfileSelector();
+}
+
+function renderProfileSelector() {
+  if (!profileSelect) return;
+  profileSelect.innerHTML = "";
+  appData.profiles.forEach((p) => {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.name || "Profil";
+    profileSelect.appendChild(opt);
+  });
+  profileSelect.value = profile.id;
+  if (deleteProfileBtn) deleteProfileBtn.disabled = appData.profiles.length <= 1;
+}
+
+function setParentInputsDisabled(disabled) {
+  [numberRangeMinInput, numberRangeMaxInput, allowNegativeToggle, allowCarryBorrowToggle, timeGoalInput, minLevelInput, maxLevelInput]
+    .filter(Boolean)
+    .forEach((el) => { el.disabled = disabled; });
+  if (topicCheckboxesEl) {
+    topicCheckboxesEl.querySelectorAll("input[type=checkbox]").forEach((cb) => { cb.disabled = disabled; });
+  }
+}
+
+function renderParentSettingsForm() {
+  const cfg = parentConfig();
+  if (parentModeToggle) parentModeToggle.checked = !!cfg.enabled;
+  if (topicCheckboxesEl) {
+    topicCheckboxesEl.innerHTML = "";
+    ALL_TOPICS.forEach((topic) => {
+      const label = document.createElement("label");
+      label.className = "checkboxLabel";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = topic;
+      cb.checked = cfg.enabledTopics.includes(topic);
+      cb.disabled = !cfg.enabled;
+      label.appendChild(cb);
+      const span = document.createElement("span");
+      span.textContent = topicLabel(topic);
+      label.appendChild(span);
+      topicCheckboxesEl.appendChild(label);
+    });
+  }
+  if (numberRangeMinInput) numberRangeMinInput.value = cfg.numberRange.min;
+  if (numberRangeMaxInput) numberRangeMaxInput.value = cfg.numberRange.max;
+  if (allowNegativeToggle) allowNegativeToggle.checked = cfg.allowNegative;
+  if (allowCarryBorrowToggle) allowCarryBorrowToggle.checked = cfg.allowCarryBorrow;
+  if (timeGoalInput) timeGoalInput.value = cfg.timeGoalSeconds;
+  if (minLevelInput) minLevelInput.value = cfg.difficultyClamp.minLevel;
+  if (maxLevelInput) maxLevelInput.value = cfg.difficultyClamp.maxLevel;
+  setParentInputsDisabled(!cfg.enabled);
+  renderTopicLocks();
+}
+
+function collectParentSettingsFromForm() {
+  const cfg = parentConfig();
+  const enabled = !!parentModeToggle?.checked;
+  const enabledTopicsList = Array.from(topicCheckboxesEl?.querySelectorAll("input[type=checkbox]") || [])
+    .filter((cb) => cb.checked)
+    .map((cb) => cb.value);
+  const numberRange = {
+    min: Number(numberRangeMinInput?.value) || cfg.numberRange.min,
+    max: Number(numberRangeMaxInput?.value) || cfg.numberRange.max
+  };
+  const difficultyClamp = {
+    minLevel: Number(minLevelInput?.value) || cfg.difficultyClamp.minLevel,
+    maxLevel: Number(maxLevelInput?.value) || cfg.difficultyClamp.maxLevel
+  };
+
+  parentSettings = normalizeParentSettings({
+    ...cfg,
+    enabled,
+    enabledTopics: enabledTopicsList,
+    numberRange,
+    allowNegative: !!allowNegativeToggle?.checked,
+    allowCarryBorrow: !!allowCarryBorrowToggle?.checked,
+    timeGoalSeconds: Number(timeGoalInput?.value) || cfg.timeGoalSeconds,
+    difficultyClamp
+  });
+  profile.parentSettings = parentSettings;
+}
+
 function applyProfile() {
   const name = (profile.name || "Mariana").trim();
   avatarEl.textContent = name ? name[0].toUpperCase() : "M";
@@ -263,7 +574,10 @@ function applyProfile() {
   document.documentElement.setAttribute("data-theme", profile.theme || DEFAULT_THEME);
   playerNameInput.value = name;
   if (explainModeToggle) explainModeToggle.checked = !!profile.explainMode;
+  if (profileSelect) profileSelect.value = profile.id;
   renderThemeOptions();
+  renderParentSettingsForm();
+  renderTopicLocks();
 }
 
 function renderStats() {
@@ -371,10 +685,27 @@ function unlockTheme(themeId) {
   if (shopMessage) shopMessage.textContent = `${themeName(themeId)} ist jetzt freigeschaltet!`;
 }
 
+function persistActiveProfile() {
+  const enrichedProfile = {
+    ...profile,
+    state,
+    topicStats,
+    daily,
+    parentSettings
+  };
+  const idx = appData.profiles.findIndex((p) => p.id === enrichedProfile.id);
+  if (idx >= 0) {
+    appData.profiles[idx] = enrichedProfile;
+  } else {
+    appData.profiles.push(enrichedProfile);
+  }
+  appData.activeProfileId = enrichedProfile.id;
+  appData.appVersion = APP_VERSION;
+  saveJSON(APP_STORAGE_KEY, appData);
+}
+
 function saveAll() {
-  saveJSON(STATE_KEY, state);
-  saveJSON(PROFILE_KEY, profile);
-  saveJSON(STATS_KEY, topicStats);
+  persistActiveProfile();
 }
 
 function todayKey() {
@@ -392,11 +723,13 @@ function topicLabel(topic) {
   return opts.find((o) => o.value === topic)?.textContent || topic;
 }
 
-function computeWeakTopic() {
+function computeWeakTopic(statsSource = topicStats) {
   let weakest = null;
   let weakestAcc = Infinity;
 
-  Object.entries(topicStats || {}).forEach(([topic, stats]) => {
+  const allowed = new Set(enabledTopics());
+  Object.entries(statsSource || {}).forEach(([topic, stats]) => {
+    if (!allowed.has(topic)) return;
     const total = (stats.correct || 0) + (stats.wrong || 0);
     if (total < 3) return;
     const acc = total === 0 ? 1 : (stats.correct || 0) / total;
@@ -408,14 +741,16 @@ function computeWeakTopic() {
 
   if (!weakest) {
     const selected = topicEl?.value;
-    if (selected && selected !== "mix") return selected;
+    if (selected && selected !== "mix" && enabledTopics().includes(selected)) return selected;
+    const allowed = enabledTopics();
+    if (allowed.length) return allowed[0];
     return "linear";
   }
   return weakest;
 }
 
-function defaultDaily(dateKey = todayKey()) {
-  const weakTopic = computeWeakTopic();
+function defaultDaily(dateKey = todayKey(), statsSource = topicStats) {
+  const weakTopic = computeWeakTopic(statsSource);
   return {
     dateKey,
     day: dateKey,
@@ -433,14 +768,14 @@ function defaultDaily(dateKey = todayKey()) {
   };
 }
 
-function normalizeDaily(raw) {
+function normalizeDaily(raw, statsSource = topicStats) {
   const today = todayKey();
-  if (!raw) return defaultDaily(today);
+  if (!raw) return defaultDaily(today, statsSource);
 
   const sameDay = (raw.day || raw.dateKey) === today;
-  if (!sameDay) return defaultDaily(today);
+  if (!sameDay) return defaultDaily(today, statsSource);
 
-  const base = defaultDaily(today);
+  const base = defaultDaily(today, statsSource);
   const data = { ...base, ...raw, dateKey: today, day: today };
 
   data.targetCount = Number.isFinite(data.targetCount) ? data.targetCount : DAILY_TARGET;
@@ -455,7 +790,7 @@ function normalizeDaily(raw) {
   data.fastCorrectToday = data.fastCorrectToday || 0;
   data.weakTopicCorrectToday = data.weakTopicCorrectToday || 0;
 
-  const weakTopic = data?.quests?.C?.weakTopic || computeWeakTopic();
+  const weakTopic = data?.quests?.C?.weakTopic || computeWeakTopic(statsSource);
   data.quests = {
     A: { ...base.quests.A, ...(data.quests?.A || {}) },
     B: { ...base.quests.B, ...(data.quests?.B || {}) },
@@ -466,11 +801,14 @@ function normalizeDaily(raw) {
 }
 
 function loadDaily() {
-  const stored = loadJSON(DAILY_KEY, null);
-  return normalizeDaily(stored);
+  return normalizeDaily(profile.daily, topicStats);
 }
 
-function saveDaily(d) { saveJSON(DAILY_KEY, d); }
+function saveDaily(d) {
+  daily = normalizeDaily(d, topicStats);
+  profile.daily = daily;
+  persistActiveProfile();
+}
 
 let daily = loadDaily();
 
@@ -496,7 +834,7 @@ function renderDailyQuests() {
     },
     {
       id: "B",
-      title: "3 Aufgaben unter 10 Sekunden",
+      title: `3 Aufgaben unter ${parentConfig().timeGoalSeconds || 10} Sekunden`,
       progress: q.B?.progress || 0,
       goal: q.B?.goal || 3,
       done: !!q.B?.done
@@ -580,8 +918,9 @@ function weightedPickTopic() {
   const selected = topicEl.value;
   if (selected !== "mix") return selected;
 
-  const topics = Object.keys(BASE_WEIGHTS);
-  const weights = topics.map(t => BASE_WEIGHTS[t] * adaptiveWeight(t));
+  const allowed = enabledTopics().filter((t) => Object.keys(BASE_WEIGHTS).includes(t));
+  const topics = allowed.length ? allowed : enabledTopics();
+  const weights = topics.map(t => (BASE_WEIGHTS[t] || 10) * adaptiveWeight(t));
 
   const sum = weights.reduce((a, b) => a + b, 0);
   let r = Math.random() * sum;
@@ -597,13 +936,14 @@ function ensureTopicStats(topic) {
     topicStats[topic] = defaultTopicStat();
   }
   // falls ältere Saves geladen wurden
-  topicStats[topic] = normalizeTopicStat(topicStats[topic]);
+  topicStats[topic] = { ...normalizeTopicStat(topicStats[topic]), difficultyLevel: clampDifficultyLevel(topicStats[topic].difficultyLevel) };
   return topicStats[topic];
 }
 
 function levelScaledValue(level, min, max) {
   const span = max - min;
-  const factor = (clamp(level, DIFFICULTY_MIN, DIFFICULTY_MAX) - DIFFICULTY_MIN) / (DIFFICULTY_MAX - DIFFICULTY_MIN);
+  const clamped = clampDifficultyLevel(level);
+  const factor = (clamped - DIFFICULTY_MIN) / (DIFFICULTY_MAX - DIFFICULTY_MIN);
   return min + Math.round(span * factor);
 }
 
@@ -640,7 +980,7 @@ function adjustDifficulty(stats) {
     }
   }
 
-  const next = clamp(prev + delta, DIFFICULTY_MIN, DIFFICULTY_MAX);
+  const next = clamp(clampDifficultyLevel(prev + delta), DIFFICULTY_MIN, DIFFICULTY_MAX);
   stats.difficultyLevel = next;
 
   if (DEBUG_DIFFICULTY && delta !== 0) {
@@ -649,7 +989,7 @@ function adjustDifficulty(stats) {
 }
 
 function getTopicDifficulty(topic) {
-  return ensureTopicStats(topic).difficultyLevel || DIFFICULTY_MIN;
+  return clampDifficultyLevel(ensureTopicStats(topic).difficultyLevel || DIFFICULTY_MIN);
 }
 
 // ---------------- Generators (procedural) ----------------
@@ -657,11 +997,11 @@ function genTerms(level) {
   // Klammern + zusammenfassen: a(bx + c) + dx + e
   const maxCoef = levelScaledValue(level, 4, 12);
   const maxOffset = levelScaledValue(level, 8, 22);
-  const a = randInt(2, maxCoef);
-  const b = randInt(1, maxCoef);
-  const c = randInt(-maxOffset, maxOffset);
-  const d = randInt(1, maxCoef);
-  const e = randInt(-maxOffset, maxOffset);
+  const a = constrainedRandInt(2, maxCoef, { allowNegative: false });
+  const b = constrainedRandInt(1, maxCoef, { allowNegative: parentConfig().allowNegative });
+  const c = constrainedRandInt(-maxOffset, maxOffset, { allowNegative: true });
+  const d = constrainedRandInt(1, maxCoef, { allowNegative: parentConfig().allowNegative });
+  const e = constrainedRandInt(-maxOffset, maxOffset, { allowNegative: true });
 
   // expression: a(bx + c) + dx + e
   // simplified: (a*b + d)x + (a*c + e)
@@ -686,9 +1026,9 @@ function genTerms(level) {
 
 function genLinear(level) {
   // y = mx + b with integer result
-  const m = randInt(-levelScaledValue(level, 4, 10), levelScaledValue(level, 6, 14));
-  const b = randInt(-levelScaledValue(level, 10, 24), levelScaledValue(level, 10, 28));
-  const x = randInt(-levelScaledValue(level, 6, 14), levelScaledValue(level, 8, 18));
+  const m = constrainedRandInt(-levelScaledValue(level, 4, 10), levelScaledValue(level, 6, 14), { allowNegative: true });
+  const b = constrainedRandInt(-levelScaledValue(level, 10, 24), levelScaledValue(level, 10, 28), { allowNegative: true });
+  const x = constrainedRandInt(-levelScaledValue(level, 6, 14), levelScaledValue(level, 8, 18), { allowNegative: true });
   const y = m * x + b;
   const signB = b >= 0 ? `+ ${b}` : `- ${Math.abs(b)}`;
   return {
@@ -702,8 +1042,8 @@ function genLinear(level) {
 
 function genPowers(level) {
   // a^n, keep manageable
-  const a = randInt(2, levelScaledValue(level, 7, 12));
-  const n = level < 3 ? randInt(2, 3) : level < 7 ? randInt(2, 4) : randInt(2, 5);
+  const a = constrainedRandInt(2, levelScaledValue(level, 7, 12), { allowNegative: false });
+  const n = level < 3 ? constrainedRandInt(2, 3, { allowNegative: false }) : level < 7 ? constrainedRandInt(2, 4, { allowNegative: false }) : constrainedRandInt(2, 5, { allowNegative: false });
   return {
     topic: "powers",
     q: `Berechne: ${a}^${n}`,
@@ -732,8 +1072,8 @@ function genGeometry(level) {
   const type = randInt(0, 2);
 
   if (type === 0) {
-    const a = randInt(3, levelScaledValue(level, 18, 40));
-    const b = randInt(3, levelScaledValue(level, 18, 40));
+    const a = constrainedRandInt(3, levelScaledValue(level, 18, 40), { allowNegative: false });
+    const b = constrainedRandInt(3, levelScaledValue(level, 18, 40), { allowNegative: false });
     return {
       topic: "geometry",
       q: `Rechteck: a=${a} cm, b=${b} cm. Fläche A = ? (cm²)`,
@@ -744,8 +1084,8 @@ function genGeometry(level) {
   }
 
   if (type === 1) {
-    const g = randInt(4, levelScaledValue(level, 22, 48));
-    const h = randInt(3, levelScaledValue(level, 18, 36));
+    const g = constrainedRandInt(4, levelScaledValue(level, 22, 48), { allowNegative: false });
+    const h = constrainedRandInt(3, levelScaledValue(level, 18, 36), { allowNegative: false });
     return {
       topic: "geometry",
       q: `Dreieck: g=${g} cm, h=${h} cm. Fläche A = ? (cm²)`,
@@ -755,7 +1095,7 @@ function genGeometry(level) {
     };
   }
 
-  const r = randInt(2, levelScaledValue(level, 10, 26));
+  const r = constrainedRandInt(2, levelScaledValue(level, 10, 26), { allowNegative: false });
   const U = Math.round(2 * 3.14 * r * 100) / 100;
   return {
     topic: "geometry",
@@ -769,10 +1109,10 @@ function genGeometry(level) {
 function genEquations(level) {
   // ax + b = c with integer solution
   const maxCoef = Math.min(12, 3 + levelScaledValue(level, 3, 10));
-  const allowNegativeA = level > 3;
-  const a = randInt(1, maxCoef) * (allowNegativeA && Math.random() < 0.4 ? -1 : 1);
-  const x = randInt(-levelScaledValue(level, 8, 16), levelScaledValue(level, 10, 22));
-  const b = randInt(-levelScaledValue(level, 10, 22), levelScaledValue(level, 10, 22));
+  const allowNegativeA = level > 3 && parentConfig().allowNegative;
+  const a = constrainedRandInt(1, maxCoef, { allowNegative: allowNegativeA }) * (allowNegativeA && Math.random() < 0.4 ? -1 : 1);
+  const x = constrainedRandInt(-levelScaledValue(level, 8, 16), levelScaledValue(level, 10, 22), { allowNegative: true });
+  const b = constrainedRandInt(-levelScaledValue(level, 10, 22), levelScaledValue(level, 10, 22), { allowNegative: true });
   const c = a * x + b;
   const signB = b >= 0 ? `+ ${b}` : `- ${Math.abs(b)}`;
 
@@ -801,8 +1141,8 @@ function genPercent(level) {
   const maxIdx = levelScaledValue(level, 5, percOptions.length - 1);
   const p = percOptions[randInt(0, maxIdx)];
   const divisor = 100 / gcd(Math.round(p * 10), 1000); // ensures integer result even for 12.5
-  const multiplier = level < 4 ? randInt(2, 10) : randInt(4, levelScaledValue(level, 14, 24));
-  const extraScale = level > 6 ? randInt(2, 4) : level > 3 ? randInt(1, 3) : 1;
+  const multiplier = level < 4 ? constrainedRandInt(2, 10) : constrainedRandInt(4, levelScaledValue(level, 14, 24));
+  const extraScale = level > 6 ? constrainedRandInt(2, 4) : level > 3 ? constrainedRandInt(1, 3) : 1;
   const G = divisor * multiplier * extraScale;
   const result = (G * p) / 100;
 
@@ -827,7 +1167,7 @@ function genPythagoras(level) {
   const idx = Math.min(triples.length - 1, Math.max(0, level - 1));
   const base = triples[randInt(0, idx)];
   const scaleMax = level < 3 ? 1 : level < 6 ? 2 : level < 9 ? 3 : 4;
-  const scale = randInt(1, scaleMax);
+  const scale = constrainedRandInt(1, scaleMax, { allowNegative: false });
   const a = base.a * scale;
   const b = base.b * scale;
   const c = base.c * scale;
@@ -950,6 +1290,7 @@ function showNextHintManual() {
 }
 
 function newQuestion() {
+  ensureActiveTopicAllowed();
   const topic = weightedPickTopic();
   current = pickFromCardsOrProcedural(topic);
 
@@ -1073,8 +1414,9 @@ function updateQuestsOnAnswer({ correct, solveTime, topic }) {
     }
   }
 
-  // Quest B: 3 Aufgaben unter 10 Sekunden
-  if (solveTime != null && solveTime <= 10) {
+  // Quest B: 3 Aufgaben unter Zeitlimit
+  const timeGoal = parentConfig().timeGoalSeconds || 10;
+  if (solveTime != null && solveTime <= timeGoal) {
     daily.fastCorrectToday = (daily.fastCorrectToday || 0) + 1;
     if (!q.B.done) {
       q.B.progress = Math.min(q.B.goal, daily.fastCorrectToday);
@@ -1176,7 +1518,10 @@ function checkAnswer() {
 function resetProgress() {
   state = { level: 1, streak: 0, score: 0, coins: 0 };
   topicStats = { ...DEFAULT_TOPIC_STATS };
-  daily = defaultDaily();
+  daily = defaultDaily(todayKey(), topicStats);
+  profile.state = state;
+  profile.topicStats = topicStats;
+  profile.daily = daily;
   saveDaily(daily);
   saveAll();
   renderStats();
@@ -1205,16 +1550,62 @@ saveProfileBtn.addEventListener("click", (e) => {
     if (shopMessage) shopMessage.textContent = "Erst im Shop freischalten, dann auswählen.";
     return;
   }
-  profile = {
-    name: (playerNameInput.value || "Mariana").trim().slice(0, 20),
-    theme: chosenTheme,
-    unlockedThemes: profile.unlockedThemes || [DEFAULT_THEME],
-    explainMode: !!explainModeToggle?.checked
-  };
+  collectParentSettingsFromForm();
+  profile.name = (playerNameInput.value || "Mariana").trim().slice(0, 20);
+  profile.theme = chosenTheme;
+  profile.unlockedThemes = profile.unlockedThemes || [DEFAULT_THEME];
+  profile.explainMode = !!explainModeToggle?.checked;
+  profile.parentSettings = parentSettings;
+  renderProfileSelector();
   saveAll();
   applyProfile();
+  renderTopicLocks();
+  renderDailyQuests();
+  ensureActiveTopicAllowed();
   closeModal();
 });
+
+if (newProfileBtn) {
+  newProfileBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    const name = prompt("Name für neues Profil?") || `Profil ${appData.profiles.length + 1}`;
+    createProfile(name);
+    applyProfile();
+    renderStats();
+    renderDaily();
+    renderDailyQuests();
+  });
+}
+
+if (deleteProfileBtn) {
+  deleteProfileBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (appData.profiles.length <= 1) return;
+    const ok = confirm("Dieses Profil wirklich löschen? Fortschritt geht verloren.");
+    if (!ok) return;
+    const remaining = appData.profiles.filter((p) => p.id !== profile.id);
+    appData.profiles = remaining.length ? remaining : appData.profiles;
+    const next = remaining[0] || appData.profiles[0];
+    setActiveProfile(next.id);
+    renderProfileSelector();
+  });
+}
+
+if (profileSelect) {
+  profileSelect.addEventListener("change", (e) => {
+    setActiveProfile(e.target.value);
+  });
+}
+
+if (parentModeToggle) {
+  parentModeToggle.addEventListener("change", () => {
+    const enabled = !!parentModeToggle.checked;
+    setParentInputsDisabled(!enabled);
+    if (topicCheckboxesEl) {
+      topicCheckboxesEl.querySelectorAll("input[type=checkbox]").forEach((cb) => { cb.disabled = !enabled; });
+    }
+  });
+}
 
 // Controls
 checkBtn.addEventListener("click", checkAnswer);
@@ -1222,12 +1613,13 @@ newBtn.addEventListener("click", newQuestion);
 skipBtn.addEventListener("click", newQuestion);
 resetBtn.addEventListener("click", resetProgress);
 answerEl.addEventListener("keydown", (e) => { if (e.key === "Enter") checkAnswer(); });
-topicEl.addEventListener("change", newQuestion);
+topicEl.addEventListener("change", () => { ensureActiveTopicAllowed(); newQuestion(); });
 if (nextHintBtn) nextHintBtn.addEventListener("click", showNextHintManual);
 
 // Init
 closeModal();
 (async function init() {
+  renderProfileSelector();
   applyProfile();
   renderStats();
   renderDaily();
