@@ -513,7 +513,7 @@ function setParentInputsDisabled(disabled) {
 }
 
 function renderParentSettingsForm() {
-  const cfg = normalizeParentSettings(parentSettings);
+  const cfg = parentConfig();
   if (parentModeToggle) parentModeToggle.checked = !!cfg.enabled;
   if (topicCheckboxesEl) {
     topicCheckboxesEl.innerHTML = "";
@@ -544,36 +544,28 @@ function renderParentSettingsForm() {
 }
 
 function collectParentSettingsFromForm() {
-  const current = normalizeParentSettings(parentSettings);
+  const cfg = parentConfig();
   const enabled = !!parentModeToggle?.checked;
   const enabledTopicsList = Array.from(topicCheckboxesEl?.querySelectorAll("input[type=checkbox]") || [])
     .filter((cb) => cb.checked)
     .map((cb) => cb.value);
-
-  const nrMinRaw = Number(numberRangeMinInput?.value);
-  const nrMaxRaw = Number(numberRangeMaxInput?.value);
   const numberRange = {
-    min: Number.isFinite(nrMinRaw) ? nrMinRaw : current.numberRange.min,
-    max: Number.isFinite(nrMaxRaw) ? nrMaxRaw : current.numberRange.max
+    min: Number(numberRangeMinInput?.value) || cfg.numberRange.min,
+    max: Number(numberRangeMaxInput?.value) || cfg.numberRange.max
   };
-
-  const minLevelRaw = Number(minLevelInput?.value);
-  const maxLevelRaw = Number(maxLevelInput?.value);
   const difficultyClamp = {
-    minLevel: Number.isFinite(minLevelRaw) ? minLevelRaw : current.difficultyClamp.minLevel,
-    maxLevel: Number.isFinite(maxLevelRaw) ? maxLevelRaw : current.difficultyClamp.maxLevel
+    minLevel: Number(minLevelInput?.value) || cfg.difficultyClamp.minLevel,
+    maxLevel: Number(maxLevelInput?.value) || cfg.difficultyClamp.maxLevel
   };
-
-  const timeGoalRaw = Number(timeGoalInput?.value);
 
   parentSettings = normalizeParentSettings({
-    ...current,
+    ...cfg,
     enabled,
     enabledTopics: enabledTopicsList,
     numberRange,
     allowNegative: !!allowNegativeToggle?.checked,
     allowCarryBorrow: !!allowCarryBorrowToggle?.checked,
-    timeGoalSeconds: Number.isFinite(timeGoalRaw) ? timeGoalRaw : current.timeGoalSeconds,
+    timeGoalSeconds: Number(timeGoalInput?.value) || cfg.timeGoalSeconds,
     difficultyClamp
   });
   profile.parentSettings = parentSettings;
