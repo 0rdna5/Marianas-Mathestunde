@@ -51,6 +51,54 @@
       "answerType": "number",
       "answer": 24,
       "hint": "Tipp: A=a·b."
+    },
+    {
+      "id": "equations_01",
+      "topic": "equations",
+      "prompt": "Löse: 3x + 5 = 20",
+      "answerType": "number",
+      "answer": 5,
+      "hint": "Tipp: -5 rechnen, dann durch 3 teilen."
+    },
+    {
+      "id": "equations_02",
+      "topic": "equations",
+      "prompt": "Löse: 4x - 6 = 10",
+      "answerType": "number",
+      "answer": 4,
+      "hint": "Tipp: +6 rechnen, dann durch 4 teilen."
+    },
+    {
+      "id": "percent_01",
+      "topic": "percent",
+      "prompt": "Wie viel sind 25% von 80?",
+      "answerType": "number",
+      "answer": 20,
+      "hint": "Tipp: 25% = ein Viertel."
+    },
+    {
+      "id": "percent_02",
+      "topic": "percent",
+      "prompt": "Wie viel sind 60% von 50?",
+      "answerType": "number",
+      "answer": 30,
+      "hint": "Tipp: 10% von 50 sind 5. Dann hochrechnen."
+    },
+    {
+      "id": "pythagoras_01",
+      "topic": "pythagoras",
+      "prompt": "Rechtwinkliges Dreieck: a=3 cm, b=4 cm. c=?",
+      "answerType": "number",
+      "answer": 5,
+      "hint": "Tipp: Klassiker: 3-4-5-Dreieck."
+    },
+    {
+      "id": "pythagoras_02",
+      "topic": "pythagoras",
+      "prompt": "Rechtwinkliges Dreieck: a=6 cm, b=8 cm. c=?",
+      "answerType": "number",
+      "answer": 10,
+      "hint": "Tipp: Skaliertes 3-4-5-Dreieck."
     }
   ]
 }

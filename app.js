@@ -360,6 +360,77 @@ function genGeometry(level) {
   };
 }
 
+function genEquations(level) {
+  // ax + b = c with integer solution
+  const maxCoef = Math.min(8, 3 + level);
+  const a = randInt(1, maxCoef) * (Math.random() < 0.3 ? -1 : 1);
+  const x = randInt(-10, 12);
+  const b = randInt(-12, 12);
+  const c = a * x + b;
+  const signB = b >= 0 ? `+ ${b}` : `- ${Math.abs(b)}`;
+
+  return {
+    topic: "equations",
+    q: `Löse: ${a}x ${signB} = ${c}`,
+    hint: "Tipp: Erst b auf die andere Seite, dann durch a teilen.",
+    answerType: "number",
+    a: x
+  };
+}
+
+function gcd(a, b) {
+  let x = Math.abs(a);
+  let y = Math.abs(b);
+  while (y !== 0) {
+    const t = y;
+    y = x % y;
+    x = t;
+  }
+  return x || 1;
+}
+
+function genPercent(level) {
+  const percOptions = [10, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90];
+  const p = percOptions[randInt(0, percOptions.length - 1)];
+  const divisor = 100 / gcd(p, 100); // ensures integer result
+  const multiplier = level < 4 ? randInt(2, 10) : randInt(4, 16);
+  const G = divisor * multiplier * (level > 5 ? randInt(2, 3) : 1);
+  const result = (G * p) / 100;
+
+  return {
+    topic: "percent",
+    q: `Wie viel sind ${p}% von ${G}?`,
+    hint: "Tipp: p% = p/100. Also G · p / 100.",
+    answerType: "number",
+    a: result
+  };
+}
+
+function genPythagoras(level) {
+  const triples = [
+    { a: 3, b: 4, c: 5 },
+    { a: 5, b: 12, c: 13 },
+    { a: 8, b: 15, c: 17 },
+    { a: 7, b: 24, c: 25 },
+    { a: 9, b: 40, c: 41 }
+  ];
+
+  const idx = Math.min(triples.length - 1, Math.max(0, level - 1));
+  const base = triples[randInt(0, idx)];
+  const scale = level < 3 ? 1 : level < 6 ? randInt(1, 2) : randInt(1, 3);
+  const a = base.a * scale;
+  const b = base.b * scale;
+  const c = base.c * scale;
+
+  return {
+    topic: "pythagoras",
+    q: `Rechtwinkliges Dreieck: a=${a} cm, b=${b} cm. Hypotenuse c = ? (cm)`,
+    hint: "Tipp: c² = a² + b². Nutze das Tripel.",
+    answerType: "number",
+    a: c
+  };
+}
+
 // ---------------- Question creation (cards + procedural) ----------------
 function pickFromCardsOrProcedural(topic) {
   // 35% chance to use a fixed "card" (if available), else procedural generator
@@ -383,7 +454,11 @@ function pickFromCardsOrProcedural(topic) {
   if (topic === "powers") return genPowers(L);
   if (topic === "roots") return genRoots(L);
   if (topic === "geometry") return genGeometry(L);
+  if (topic === "equations") return genEquations(L);
+  if (topic === "percent") return genPercent(L);
+  if (topic === "pythagoras") return genPythagoras(L);
 
+  console.warn(`Unknown topic '${topic}', fallback to 'linear'.`);
   return genLinear(L);
 }
 
