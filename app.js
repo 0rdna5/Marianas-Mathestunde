@@ -396,7 +396,7 @@ function normalizeTopicStats(raw) {
 }
 
 const DEFAULT_TOPIC_STATS = normalizeTopicStats({});
-topicStats = profile.topicStats || { ...DEFAULT_TOPIC_STATS };
+let topicStats = profile.topicStats || { ...DEFAULT_TOPIC_STATS };
 
 // loaded card deck
 let deck = { meta: {}, cards: [] };
@@ -465,10 +465,10 @@ function refreshProfileRefs(nextProfile) {
   profile.parentSettings = parentSettings;
 }
 
-function setActiveProfile(profileId, { skipPersistCurrent = false } = {}) {
+function setActiveProfile(profileId) {
   const next = appData.profiles.find((p) => p.id === profileId);
   if (!next) return;
-  if (!skipPersistCurrent) persistActiveProfile();
+  persistActiveProfile();
   refreshProfileRefs(next);
   appData.activeProfileId = next.id;
   saveJSON(APP_STORAGE_KEY, appData);
@@ -969,7 +969,7 @@ function saveDaily(d) {
   persistActiveProfile();
 }
 
-daily = loadDaily();
+let daily = loadDaily();
 
 function renderDaily() {
   const target = dailyTarget();
@@ -1747,7 +1747,7 @@ if (deleteProfileBtn) {
     const remaining = appData.profiles.filter((p) => p.id !== profile.id);
     appData.profiles = remaining.length ? remaining : appData.profiles;
     const next = remaining[0] || appData.profiles[0];
-    setActiveProfile(next.id, { skipPersistCurrent: true });
+    setActiveProfile(next.id);
     renderProfileSelector();
   });
 }
