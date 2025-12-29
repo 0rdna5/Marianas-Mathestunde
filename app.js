@@ -65,6 +65,9 @@ const closeModalBtn = el("closeModalBtn");
 const playerNameInput = el("playerName");
 const themeSelect = el("theme");
 const saveProfileBtn = el("saveProfileBtn");
+const shopList = el("shopList");
+const shopMessage = el("shopMessage");
+const shopCoins = el("shopCoins");
 
 const dailyText = el("dailyText");
 const dailyDone = el("dailyDone");
@@ -78,6 +81,16 @@ const CARDS_KEY = "mmm_cards_cache_v1";
 const DAILY_KEY = "mmm_daily_v1";
 const DAILY_TARGET = 15;
 const DEFAULT_THEME = "cottoncandy";
+const THEMES = [
+  { id: "cottoncandy", name: "Cotton Candy" },
+  { id: "lavender", name: "Lavender Glow" },
+  { id: "skyrose", name: "Sky Rose" }
+];
+const THEME_PRICES = {
+  [DEFAULT_THEME]: 0,
+  lavender: 20,
+  skyrose: 20
+};
 
 
 function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
@@ -90,8 +103,21 @@ function loadJSON(key, fallback) {
 function saveJSON(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
 
 // ---------------- State / Profile ----------------
-let state = loadJSON(STATE_KEY, { level: 1, streak: 0, score: 0, coins: 0 });
-let profile = loadJSON(PROFILE_KEY, { name: "Mariana", theme: DEFAULT_THEME });
+const DEFAULT_STATE = { level: 1, streak: 0, score: 0, coins: 0 };
+const DEFAULT_PROFILE = { name: "Mariana", theme: DEFAULT_THEME, unlockedThemes: [DEFAULT_THEME] };
+
+function normalizeProfile(rawProfile) {
+  const data = { ...DEFAULT_PROFILE, ...(rawProfile || {}) };
+  const unlocked = Array.isArray(data.unlockedThemes) ? [...new Set(data.unlockedThemes)] : [];
+  if (!unlocked.includes(DEFAULT_THEME)) unlocked.push(DEFAULT_THEME);
+  if (data.theme && !unlocked.includes(data.theme)) unlocked.push(data.theme);
+
+  return { ...data, unlockedThemes: unlocked };
+}
+
+let state = { ...DEFAULT_STATE, ...loadJSON(STATE_KEY, DEFAULT_STATE) };
+if (!Number.isFinite(state.coins)) state.coins = 0;
+let profile = normalizeProfile(loadJSON(PROFILE_KEY, DEFAULT_PROFILE));
 
 // topic stats: { topic: { correct: n, wrong: n } }
 const ALL_TOPICS = [
@@ -116,13 +142,38 @@ let topicStats = { ...DEFAULT_TOPIC_STATS, ...loadJSON(STATS_KEY, DEFAULT_TOPIC_
 let deck = { meta: {}, cards: [] };
 let current = null;
 
+function themeName(id) {
+  return THEMES.find((t) => t.id === id)?.name || id;
+}
+
+function isThemeUnlocked(themeId) {
+  return (profile.unlockedThemes || []).includes(themeId);
+}
+
+function renderThemeOptions() {
+  if (!themeSelect) return;
+  const unlocked = new Set(profile.unlockedThemes || []);
+  Array.from(themeSelect.options).forEach((opt) => {
+    const unlockedTheme = unlocked.has(opt.value);
+    opt.disabled = !unlockedTheme;
+    opt.textContent = `${unlockedTheme ? "" : "🔒 "}${themeName(opt.value)}`;
+    opt.classList.toggle("lockedOption", !unlockedTheme);
+  });
+
+  const active = profile.theme || DEFAULT_THEME;
+  if (!unlocked.has(active)) {
+    profile.unlockedThemes = Array.from(new Set([active, ...unlocked]));
+  }
+  themeSelect.value = active;
+}
+
 function applyProfile() {
   const name = (profile.name || "Mariana").trim();
   avatarEl.textContent = name ? name[0].toUpperCase() : "M";
   subtitleEl.textContent = `Für ${name} • AHS Unterstufe`;
   document.documentElement.setAttribute("data-theme", profile.theme || DEFAULT_THEME);
   playerNameInput.value = name;
-  themeSelect.value = profile.theme || DEFAULT_THEME;
+  renderThemeOptions();
 }
 
 function renderStats() {
@@ -148,6 +199,86 @@ function renderStats() {
     if (coinValue) coinValue.textContent = `x${boost.toFixed(1)}`;
   }
 
+  renderShop();
+}
+
+function renderShop() {
+  if (!shopList) return;
+  shopList.innerHTML = "";
+  const unlocked = new Set(profile.unlockedThemes || []);
+  if (shopCoins) shopCoins.textContent = `Coins ${state.coins ?? 0}`;
+
+  THEMES.forEach((theme) => {
+    const card = document.createElement("div");
+    card.className = "shopItem";
+
+    const info = document.createElement("div");
+    info.className = "shopInfo";
+    const nameEl = document.createElement("div");
+    nameEl.className = "shopItemName";
+    nameEl.textContent = themeName(theme.id);
+
+    const price = THEME_PRICES[theme.id] ?? 20;
+    const priceEl = document.createElement("div");
+    priceEl.className = "shopPrice";
+    priceEl.textContent = price === 0 ? "Kostenlos" : `${price} Coins`;
+
+    info.appendChild(nameEl);
+    info.appendChild(priceEl);
+
+    const actions = document.createElement("div");
+    actions.className = "shopActions";
+
+    if (profile.theme === theme.id) {
+      const active = document.createElement("span");
+      active.className = "activeBadge";
+      active.textContent = "Aktiv";
+      actions.appendChild(active);
+    }
+
+    if (unlocked.has(theme.id)) {
+      const badge = document.createElement("span");
+      badge.className = "lockedBadge";
+      badge.textContent = "Freigeschaltet";
+      actions.appendChild(badge);
+    }
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "shopButton";
+    btn.textContent = unlocked.has(theme.id) ? "Freigeschaltet" : "Freischalten";
+    btn.disabled = unlocked.has(theme.id);
+    btn.addEventListener("click", () => unlockTheme(theme.id));
+
+    actions.appendChild(btn);
+
+    card.appendChild(info);
+    card.appendChild(actions);
+    shopList.appendChild(card);
+  });
+}
+
+function unlockTheme(themeId) {
+  const price = THEME_PRICES[themeId] ?? 20;
+  const unlocked = new Set(profile.unlockedThemes || []);
+  if (unlocked.has(themeId)) {
+    if (shopMessage) shopMessage.textContent = "Schon freigeschaltet.";
+    return;
+  }
+
+  const coins = state.coins ?? 0;
+  if (coins < price) {
+    if (shopMessage) shopMessage.textContent = `Dir fehlen ${price - coins} Coins. Erst sammeln, dann freischalten!`;
+    return;
+  }
+
+  state.coins = coins - price;
+  profile.unlockedThemes = Array.from(new Set([...unlocked, themeId]));
+  saveAll();
+  renderStats();
+  renderThemeOptions();
+  renderShop();
+  if (shopMessage) shopMessage.textContent = `${themeName(themeId)} ist jetzt freigeschaltet!`;
 }
 
 function saveAll() {
@@ -635,9 +766,16 @@ modalBackdrop.addEventListener("click", (e) => { if (e.target === modalBackdrop)
 
 saveProfileBtn.addEventListener("click", (e) => {
   e.preventDefault();
+  const chosenTheme = themeSelect.value || DEFAULT_THEME;
+  if (!isThemeUnlocked(chosenTheme)) {
+    themeSelect.value = profile.theme || DEFAULT_THEME;
+    if (shopMessage) shopMessage.textContent = "Erst im Shop freischalten, dann auswählen.";
+    return;
+  }
   profile = {
     name: (playerNameInput.value || "Mariana").trim().slice(0, 20),
-    theme: themeSelect.value || "cottoncandy"
+    theme: chosenTheme,
+    unlockedThemes: profile.unlockedThemes || [DEFAULT_THEME]
   };
   saveAll();
   applyProfile();
